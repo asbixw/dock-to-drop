@@ -1,0 +1,29 @@
+{
+  "name": "dock-to-drop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dock to Drop \u2014 a mobile-first freight day procedure simulator.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 4173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "serve": "vite --host 0.0.0.0 --port 4173",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:ios": "npm run cap:sync && npx cap open ios",
+    "cap:android": "npm run cap:sync && npx cap open android",
+    "test:e2e": "node tests/e2e.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1",
+    "terser": "^5.51.2",
+    "vite": "^8.3.5"
+  }
+}

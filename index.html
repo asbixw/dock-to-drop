@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#0b1118" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Dock to Drop" />
+    <meta name="description" content="Dock to Drop — a mobile freight-day procedure simulator. Take the call, hook the trailer, seal the load, and deliver on time." />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <title>Dock to Drop — Freight Day Simulator</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene" aria-label="3D trucking yard"></canvas>
+      <div class="scene-vignette"></div>
+      <div class="scene-grain"></div>
+      <div id="hotspots" class="hotspots" aria-live="polite"></div>
+
+      <div id="hud" class="hud hidden">
+        <div class="hud-top">
+          <div class="hud-logo" aria-hidden="true"><span>D</span><i></i><span>D</span></div>
+          <div class="hud-stage">
+            <span id="stage-kicker">SHIFT 01 · 06:12</span>
+            <strong id="stage-name">The Call</strong>
+          </div>
+          <div class="hud-cluster">
+            <div class="hud-clock" id="clock">06:12</div>
+            <button id="hud-sound" class="icon-btn" aria-label="Toggle sound">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.5 3a4.5 4.5 0 0 0-2-3.74v7.48A4.5 4.5 0 0 0 16.5 12Zm-2-8.6v2.06a7 7 0 0 1 0 13.08v2.06a9 9 0 0 0 0-17.2Z"/></svg>
+            </button>
+            <button id="hud-menu" class="icon-btn" aria-label="Pause menu">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3v14H7V5Zm7 0h3v14h-3V5Z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="hud-progress" id="progress" aria-label="Shift progress"></div>
+        <div class="route-chip" id="route-chip">
+          <span class="route-dot"></span>
+          <span id="route-origin">DALLAS, TX</span>
+          <span class="route-line"></span>
+          <span id="route-dest">HOUSTON, TX</span>
+          <span class="route-miles" id="route-miles">240 MI</span>
+        </div>
+      </div>
+
+      <div id="road-hud" class="road-hud hidden">
+        <div class="road-stat"><span>SPEED</span><strong id="road-speed">62</strong><em>MPH</em></div>
+        <div class="road-center">
+          <span id="road-message">I-45 SOUTH · CLEAR</span>
+          <div class="road-progress"><i id="road-progress-fill"></i></div>
+        </div>
+        <div class="road-stat right"><span>TRIP</span><strong id="road-distance">0.0</strong><em>MI</em></div>
+      </div>
+
+      <div id="photo-ui" class="photo-ui hidden">
+        <div class="photo-top">
+          <span>CAMERA · PROOF</span>
+          <button id="photo-close" class="icon-btn light" aria-label="Close camera">✕</button>
+        </div>
+        <div class="viewfinder">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="focus-box"><span></span></div>
+          <div class="viewfinder-meta"><span id="photo-label">SEAL</span><span>ISO 100 · 1/125</span></div>
+        </div>
+        <div class="photo-bottom">
+          <div class="zoom-wrap"><span>ZOOM</span><input id="photo-zoom" type="range" min="0" max="100" value="45" /></div>
+          <button id="photo-capture" class="shutter" aria-label="Take photo"><i></i></button>
+          <div class="photo-hint" id="photo-hint">Frame the number</div>
+        </div>
+      </div>
+
+      <div id="road-controls" class="road-controls hidden">
+        <button id="road-left" aria-label="Change lane left">◀</button>
+        <button id="road-right" aria-label="Change lane right">▶</button>
+        <span class="hint">TAP TO CHANGE LANE</span>
+      </div>
+
+      <div id="dock-controls" class="dock-controls hidden">
+        <button id="dock-left" class="steer-btn" aria-label="Steer left">◀</button>
+        <div class="dock-center">
+          <div class="align-meter"><span>ALIGNMENT</span><div class="align-track"><i id="align-needle"></i><b></b></div></div>
+          <button id="dock-reverse" class="pedal-btn">HOLD TO REVERSE</button>
+          <button id="dock-forward" class="pedal-btn ghost">FORWARD</button>
+        </div>
+        <button id="dock-right" class="steer-btn" aria-label="Steer right">▶</button>
+      </div>
+
+      <div id="action-dock" class="action-dock hidden"></div>
+      <div id="phone-fab" class="phone-fab hidden" aria-label="Open phone">
+        <span class="phone-badge hidden" id="phone-badge">1</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 3v13h10V5H7Zm4 17h2v-1h-2v1Z"/></svg>
+      </div>
+
+      <div id="toast-stack" class="toast-stack"></div>
+      <div id="modal-root" class="modal-root"></div>
+      <div id="screen-root" class="screen-root"></div>
+      <div id="fade" class="fade"></div>
+      <div id="rotate-hint" class="rotate-hint">Best played in portrait</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

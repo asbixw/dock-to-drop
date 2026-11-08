@@ -1,0 +1,18 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ headless: true, executablePath: process.env.HOME + '/Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing', args:['--use-gl=angle','--use-angle=swiftshader','--enable-webgl','--ignore-gpu-blocklist'] });
+const context = await browser.newContext({ viewport:{width:390,height:844}, deviceScaleFactor:2, isMobile:true, hasTouch:true });
+const page = await context.newPage();
+page.on('pageerror', e=>console.log('PAGEERROR',e.message));
+await page.goto('http://127.0.0.1:4173/', {waitUntil:'networkidle'});
+await page.waitForSelector('.loader',{state:'detached',timeout:20000});
+console.log('SW registered', await page.evaluate(async()=>{const r=await navigator.serviceWorker.getRegistration(); return !!r;}));
+await page.reload({waitUntil:'networkidle'});
+await page.waitForTimeout(2000);
+console.log('controller', await page.evaluate(()=>!!navigator.serviceWorker.controller));
+await context.setOffline(true);
+await page.reload({waitUntil:'domcontentloaded'});
+await page.waitForTimeout(4000);
+console.log('offline title', await page.title());
+console.log('has start', await page.getByRole('button',{name:/Start shift/}).count());
+await page.screenshot({path:'/tmp/offline.png'});
+await browser.close();

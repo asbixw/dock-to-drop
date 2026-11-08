@@ -1,0 +1,12 @@
+{
+  "appId": "com.docktodrop.game",
+  "appName": "Dock to Drop",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}
