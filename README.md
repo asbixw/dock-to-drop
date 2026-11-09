@@ -107,17 +107,23 @@ builds. The player releases the brake, pulls out of the lot, and drives north. T
 is not a race track: it is a two-lane approach with signs, fences, poles and the first
 light of the morning.
 
+Dispatch assigns a 32- or 60-mile empty deadhead to DFW9. The odometer counts the path
+actually driven, the trip panel shows miles remaining and an ETA, and the shift clock
+advances at 55 mph. A 60-mile assignment simply takes half an hour longer. The 240-mile
+loaded run to Houston is the next leg, not this approach, and yard moves after the gate
+are not counted on the trip.
+
 The truck has weight. The steering has play. The brakes are air brakes. The player feels
 the trailer behind them.
 
-### 5. Gate 1 — 06:05
+### 5. Gate 1 — 06:25
 
 Amazon DFW9 appears as a long low building behind a fence. The guard booth is lit. The
 gate arm is down. The guard asks a check-in question: trailer number, seal, appointment,
 or destination. The player answers. If they are wrong, the guard pushes back. If they
 are right, the arm lifts and the yard opens.
 
-### 6. The yard — 06:10
+### 6. The yard — 06:30
 
 The yard is a working space: dock doors, parked trailers, cones, puddles, a staging
 pylon marked A-14. The player pulls alongside the trailer, sets the brake, and shuts
@@ -125,7 +131,7 @@ down.
 
 Then they climb out and walk.
 
-### 7. The walk — 06:15
+### 7. The walk — 06:35
 
 Five inspection points around the trailer:
 
@@ -138,7 +144,7 @@ Five inspection points around the trailer:
 Each point is a physical object with a prompt, not a floating icon. The player has to
 stand in the right place and look at the right thing.
 
-### 8. The proof — 06:20
+### 8. The proof — 06:40
 
 The phone becomes a camera with a 3:4 viewfinder. The player frames the seal, captures
 the photo, checks the preview, and sends it to dispatch. The shift ends on the proof

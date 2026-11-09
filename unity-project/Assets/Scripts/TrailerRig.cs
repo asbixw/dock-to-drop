@@ -28,8 +28,12 @@ public class TrailerRig : MonoBehaviour
 
     const float MaxArticulation = 84f, GearStroke = 0.34f;
     float L, wheelRadius = 0.5f, wheelAngle, gearTravel;
+    float wheelBottom = 0.01f;
     float rollAng, rollVel, lastYaw, latAccel;
     Vector3 lastAxle;
+    BoxCollider gearCollider;
+    Vector3 gearCenterRest;
+    float gearHeight;
     readonly List<Transform> wheelPivots = new List<Transform>();
     readonly List<Transform> gearParts = new List<Transform>();
     readonly List<Vector3> gearRest = new List<Vector3>();
@@ -61,7 +65,7 @@ public class TrailerRig : MonoBehaviour
             else if (n.StartsWith("Kingpin")) Grow(ref kp, ref hasKp, b);
             else if (n.StartsWith("SideWall")) { Grow(ref side, ref hasSide, b); wallMat = r.sharedMaterial; }
             else if (n.StartsWith("LandingCrank")) Grow(ref crank, ref hasCrank, b);
-            else if (n.StartsWith("LandingLeg") || n.StartsWith("LandingFoot") || n.StartsWith("LandingBrace"))
+            else if (n.StartsWith("LandingLeg") || n.StartsWith("LandingFoot"))
             {
                 gearParts.Add(r.transform);
                 gearRest.Add(transform.InverseTransformPoint(r.transform.position));
@@ -95,6 +99,11 @@ public class TrailerRig : MonoBehaviour
             if (gi < 0) { groups.Add(new List<Renderer>()); centres.Add(c); gi = groups.Count - 1; }
             groups[gi].Add(r);
         }
+        float minWheelY = float.MaxValue;
+        foreach (var r in wheelRends)
+            minWheelY = Mathf.Min(minWheelY, transform.InverseTransformPoint(r.bounds.min).y);
+        if (wheelRends.Count > 0 && minWheelY < float.MaxValue) wheelBottom = minWheelY;
+
         float axleSum = 0f;
         for (int i = 0; i < groups.Count; i++)
         {
@@ -162,9 +171,11 @@ public class TrailerRig : MonoBehaviour
         running.size = new Vector3(halfWidth * 2f, bodyBottom, rearLocalZ + 0.6f - (axleLocalZ - 1.2f));
         if (hasFeet)
         {
-            var gear = gameObject.AddComponent<BoxCollider>();
-            gear.center = new Vector3(0f, bodyBottom * 0.5f, feet.center.z);
-            gear.size = new Vector3(feet.size.x + 0.1f, bodyBottom, 0.6f);
+            gearCollider = gameObject.AddComponent<BoxCollider>();
+            gearCenterRest = new Vector3(0f, bodyBottom * 0.5f, feet.center.z);
+            gearHeight = bodyBottom;
+            gearCollider.center = gearCenterRest;
+            gearCollider.size = new Vector3(feet.size.x + 0.1f, gearHeight, 0.6f);
         }
         lastAxle = AxleGround();
         lastYaw = transform.eulerAngles.y;
@@ -194,8 +205,13 @@ public class TrailerRig : MonoBehaviour
     Vector3 AxleGround()
     {
         Vector3 a = transform.TransformPoint(new Vector3(0f, 0f, axleLocalZ));
-        a.y = 0f;
-        return a;
+        return GroundAt(a.x, a.z);
+    }
+
+    Vector3 GroundAt(float x, float z)
+    {
+        float g = GroundContact.HeightAt(new Vector3(x, 0f, z), transform, tractor != null ? tractor.transform : null, 0f);
+        return new Vector3(x, g - wheelBottom, z);
     }
 
     // The jaws have closed on the kingpin. The kingpin is pulled into the
@@ -208,7 +224,9 @@ public class TrailerRig : MonoBehaviour
         Vector3 axle = AxleGround();
         Vector3 d = hitch - axle; d.y = 0f;
         Vector3 f = d.sqrMagnitude > 1e-4f ? d.normalized : Forward;
-        Pose(hitch - f * L, f, hitch.y, out var pos, out var rot);
+        Vector3 noseAxle = hitch - f * L;
+        noseAxle.y = GroundAt(noseAxle.x, noseAxle.z).y;
+        Pose(noseAxle, f, hitch.y, out var pos, out var rot);
         transform.SetPositionAndRotation(pos, rot);
         lastAxle = AxleGround();
         lastYaw = transform.eulerAngles.y;
@@ -221,7 +239,7 @@ public class TrailerRig : MonoBehaviour
     void Pose(Vector3 axleGround, Vector3 f, float hitchY, out Vector3 pos, out Quaternion rot)
     {
         // the nose rides on the fifth wheel; the tandem stays on the ground
-        float pitch = Mathf.Atan2(hitchY - kingpinLocal.y, L) * Mathf.Rad2Deg;
+        float pitch = Mathf.Atan2(hitchY - (axleGround.y + kingpinLocal.y), L) * Mathf.Rad2Deg;
         rot = Quaternion.LookRotation(-f, Vector3.up) * Quaternion.Euler(pitch, 0f, 0f) * Quaternion.Euler(0f, 0f, rollAng);
         pos = axleGround - rot * new Vector3(0f, 0f, axleLocalZ);
     }
@@ -243,6 +261,7 @@ public class TrailerRig : MonoBehaviour
             return false;
         }
         Vector3 newAxle = hitch - f * L;
+        newAxle.y = GroundAt(newAxle.x, newAxle.z).y;
         Pose(newAxle, f, hitch.y, out var pos, out var rot);
         if (Blocked(pos, rot, tr)) return false;
 
@@ -331,12 +350,22 @@ public class TrailerRig : MonoBehaviour
     {
         Cranking = true;
         if (flow != null && flow.Audio != null) flow.Audio.PlaySfx("crank_ratchet", 0.75f);
+        float start = gearTravel;
+        float remaining = 3.1f * (1f - Mathf.Clamp01(start / GearStroke));
         float t = 0f;
-        const float dur = 3.1f;
-        while (t < dur)
+        while (t < remaining)
         {
             t += Time.deltaTime;
-            gearTravel = Mathf.SmoothStep(0f, GearStroke, t / dur);
+            // Letting go of the handle stops the gear where it is. Walk away and
+            // the crank does not keep turning by itself.
+            if (flow != null && flow.Player != null && !flow.Player.IsSeated &&
+                Vector3.Distance(flow.Player.transform.position, CrankStandWorld) > 2.2f)
+            {
+                Cranking = false;
+                flow.ShowSubtitle("You stepped away from the crank. The gear stays where you left it.", 3f);
+                yield break;
+            }
+            gearTravel = Mathf.SmoothStep(start, GearStroke, t / Mathf.Max(0.01f, remaining));
             ApplyGear();
             if (crankArm != null) crankArm.localRotation = Quaternion.Euler(-t * 360f * 1.6f, 0f, 0f);
             yield return null;
@@ -352,6 +381,11 @@ public class TrailerRig : MonoBehaviour
     {
         for (int i = 0; i < gearParts.Count; i++)
             if (gearParts[i] != null) gearParts[i].position = transform.TransformPoint(gearRest[i] + Vector3.up * gearTravel);
+        if (gearCollider != null)
+        {
+            gearCollider.enabled = !gearUp;
+            gearCollider.center = gearCenterRest + Vector3.up * gearTravel;
+        }
     }
 
     public void SupplyAir()

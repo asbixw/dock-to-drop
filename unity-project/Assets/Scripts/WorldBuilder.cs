@@ -52,7 +52,7 @@ public static class WorldBuilder
         BuildReflectionProbes(root);
         refs.playerSpawn = new GameObject("PlayerSpawn").transform;
         refs.playerSpawn.SetParent(root, false);
-        refs.playerSpawn.position = new Vector3(-7.6f, 0.2f, 16.4f);
+        refs.playerSpawn.position = new Vector3(-7.6f, 0.11f, 16.4f);
         refs.playerSpawn.rotation = Quaternion.Euler(0f, 150f, 0f);
         return refs;
     }
@@ -242,13 +242,13 @@ public static class WorldBuilder
 
         // travel center: asphalt lot (x -54..42, z -52..34, top 0.085) with a concrete fuel pad
         // (top 0.105) and a store sidewalk; striping and decals in BuildTravelCenterGround.
-        MeshFactory.Box("TruckStopApron", new Vector3(96, 0.10f, 86), new Vector3(-6, 0.035f, -9), lotAsphalt, root, false);
-        MeshFactory.Box("TruckStopIsland", new Vector3(30, 0.07f, 26), new Vector3(20, 0.07f, 5), lotConcrete, root, false);
+        MeshFactory.Box("TruckStopApron", new Vector3(96, 0.10f, 86), new Vector3(-6, 0.035f, -9), lotAsphalt, root, true);
+        MeshFactory.Box("TruckStopIsland", new Vector3(30, 0.07f, 26), new Vector3(20, 0.07f, 5), lotConcrete, root, true);
         BuildTravelCenterGround(root);
         // Amazon yard: concrete field, darker asphalt drive lane and a lighter apron at the docks
-        MeshFactory.Box("AmazonYard", new Vector3(258, 0.14f, 160), new Vector3(25, 0.05f, 296), yardConcrete, root, false);
-        MeshFactory.Box("YardDrive", new Vector3(19, 0.025f, 101), new Vector3(8, 0.158f, 267), yardAsphalt, root, false);
-        MeshFactory.Box("DockApron", new Vector3(258, 0.03f, 24), new Vector3(25, 0.145f, 317), dockConcrete, root, false);
+        MeshFactory.Box("AmazonYard", new Vector3(258, 0.14f, 160), new Vector3(25, 0.05f, 296), yardConcrete, root, true);
+        MeshFactory.Box("YardDrive", new Vector3(19, 0.025f, 101), new Vector3(8, 0.158f, 267), yardAsphalt, root, true);
+        MeshFactory.Box("DockApron", new Vector3(258, 0.03f, 24), new Vector3(25, 0.145f, 317), dockConcrete, root, true);
         MeshFactory.Box("YardLightBand", new Vector3(258, 0.02f, 0.25f), new Vector3(25, 0.17f, 218), roadLine, root, false);
 
         // shallow saw-cut joints, so the concrete reads as slabs rather than one flat plane
@@ -285,7 +285,7 @@ public static class WorldBuilder
         // store sidewalk with its curb
         var walk = MeshFactory.TexMat("Sidewalk", concD, null, new Vector2(8f, 1f), 0.10f);
         walk.color = new Color(1.04f, 1.04f, 1.02f);
-        MeshFactory.Box("StoreSidewalk", new Vector3(23.5f, 0.10f, 3.0f), new Vector3(-18f, 0.085f, 1.6f), walk, g, false);
+        MeshFactory.Box("StoreSidewalk", new Vector3(23.5f, 0.10f, 3.0f), new Vector3(-18f, 0.085f, 1.6f), walk, g, true);
         for (int i = 1; i < 8; i++)
             MeshFactory.Box("WalkJoint", new Vector3(0.04f, 0.01f, 3.0f), new Vector3(-29.75f + i * 23.5f / 8f, 0.133f, 1.6f), joint, g, false);
 
@@ -589,9 +589,9 @@ public static class WorldBuilder
     static void BuildRoad(Transform root)
     {
         var g = new GameObject("Road").transform; g.SetParent(root, false);
-        MeshFactory.Box("RoadSurface", new Vector3(15, 0.08f, 205), new Vector3(0, 0.04f, 115), asphalt, g, false);
-        MeshFactory.Box("LeftShoulder", new Vector3(3, 0.05f, 205), new Vector3(-9, 0.03f, 115), concreteDark, g, false);
-        MeshFactory.Box("RightShoulder", new Vector3(3, 0.05f, 205), new Vector3(9, 0.03f, 115), concreteDark, g, false);
+        MeshFactory.Box("RoadSurface", new Vector3(15, 0.08f, 205), new Vector3(0, 0.04f, 115), asphalt, g, true);
+        MeshFactory.Box("LeftShoulder", new Vector3(3, 0.05f, 205), new Vector3(-9, 0.03f, 115), concreteDark, g, true);
+        MeshFactory.Box("RightShoulder", new Vector3(3, 0.05f, 205), new Vector3(9, 0.03f, 115), concreteDark, g, true);
         MeshFactory.Box("ShoulderLineL", new Vector3(0.16f, 0.02f, 196), new Vector3(-6.6f, 0.095f, 116), roadLine, g, false);
         MeshFactory.Box("ShoulderLineR", new Vector3(0.16f, 0.02f, 196), new Vector3(6.6f, 0.095f, 116), roadLine, g, false);
         for (float z = 24; z < 205; z += 12f)
@@ -654,7 +654,7 @@ public static class WorldBuilder
         var mm = new GameObject("MileMarker").transform; mm.SetParent(g, false); mm.position = new Vector3(-9.2f, 0, 160f);
         MeshFactory.Box("Post", new Vector3(0.15f, 1.5f, 0.15f), new Vector3(0, 0.75f, 0), roadLine, mm, false);
         MeshFactory.Box("Plate", new Vector3(0.8f, 0.35f, 0.06f), new Vector3(0, 1.45f, 0), green, mm, false);
-        var mt = MeshFactory.Text3D("MileText", "DFW9  2", new Vector3(0, 1.45f, -0.05f), 0.28f, Color.white, mm);
+        var mt = MeshFactory.Text3D("MileText", "DFW9", new Vector3(0, 1.45f, -0.05f), 0.28f, Color.white, mm);
         MeshFactory.FaceBack(mt);
     }
 
@@ -663,7 +663,8 @@ public static class WorldBuilder
         var prefab = Resources.Load<GameObject>("Models/Freightliner_Cascadia");
         var truckRoot = new GameObject("Freightliner_Cascadia").transform;
         truckRoot.SetParent(root, false);
-        truckRoot.position = new Vector3(0, 0, 8);
+        // 0.085 lot surface minus the 0.011 tyre-bottom offset measured from the FBX.
+        truckRoot.position = new Vector3(0, 0.074f, 8);
         truckRoot.rotation = Quaternion.identity;
         var model = Object.Instantiate(prefab, truckRoot);
         model.name = "TruckVisual";
@@ -1163,7 +1164,8 @@ public static class WorldBuilder
 
         // ---- target trailer A-14, staged in the yard
         var croot = new GameObject("Trailer_A14").transform; croot.SetParent(g, false);
-        croot.position = new Vector3(26, 0, 282);
+        // Yard concrete top is 0.12; the trailer wheel bottoms sit 0.01 above its origin.
+        croot.position = new Vector3(26, 0.11f, 282);
         // staged nose-out, facing the inbound lane: a tractor swings around in
         // the open lot, lines up with the nose and backs straight under it
         croot.rotation = Quaternion.identity;
@@ -1270,7 +1272,7 @@ public static class WorldBuilder
         {
             float x = i == 0 ? -10f : 63f;
             var st = new GameObject("StagedTrailer").transform; st.SetParent(g, false);
-            st.position = new Vector3(x, 0, 283);
+            st.position = new Vector3(x, 0.11f, 283);
             st.rotation = Quaternion.Euler(0, 180, 0);
             var sm = Object.Instantiate(containerPrefab, st);
             sm.name = "ContainerVisual";
@@ -1288,7 +1290,7 @@ public static class WorldBuilder
         {
             float x = -58 + i * 38f;
             var bg = new GameObject("DockedTrailer").transform; bg.SetParent(g, false);
-            bg.position = new Vector3(x, 0, 319.4f);
+            bg.position = new Vector3(x, 0.15f, 319.4f);
             bg.rotation = Quaternion.identity;
             var bm = Object.Instantiate(containerPrefab, bg);
             bm.name = "ContainerVisual";

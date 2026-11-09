@@ -654,7 +654,7 @@ public static class WorldBuilder
         var mm = new GameObject("MileMarker").transform; mm.SetParent(g, false); mm.position = new Vector3(-9.2f, 0, 160f);
         MeshFactory.Box("Post", new Vector3(0.15f, 1.5f, 0.15f), new Vector3(0, 0.75f, 0), roadLine, mm, false);
         MeshFactory.Box("Plate", new Vector3(0.8f, 0.35f, 0.06f), new Vector3(0, 1.45f, 0), green, mm, false);
-        var mt = MeshFactory.Text3D("MileText", "DFW9  2", new Vector3(0, 1.45f, -0.05f), 0.28f, Color.white, mm);
+        var mt = MeshFactory.Text3D("MileText", "DFW9", new Vector3(0, 1.45f, -0.05f), 0.28f, Color.white, mm);
         MeshFactory.FaceBack(mt);
     }
 

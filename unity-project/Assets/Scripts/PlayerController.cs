@@ -28,6 +28,7 @@ public class PlayerController : MonoBehaviour
     bool seated;
     bool uiLock;
     bool wantCursorLock = true;
+    bool cursorFree;
     Vector3 camHome;
     Transform seatParent;
     Vector3 planarVel;
@@ -49,6 +50,9 @@ public class PlayerController : MonoBehaviour
     float bodyYaw, bodyYawVel;
     float tpDist = 3.9f;
     Vector3 tpPivot;
+    bool aimLock;
+    Vector3 aimPoint;
+    float aimLockUntil;
 
     public bool IsSeated => seated;
     bool thirdPersonBeforeSeat;
@@ -116,6 +120,7 @@ public class PlayerController : MonoBehaviour
         yaw = newYaw;
         bodyYaw = newYaw;
         pitch = 0f;
+        aimLock = false;
         if (cam != null) cam.transform.localRotation = Quaternion.identity;
         // A teleport is a cut, not a camera move. Snap the chase pivot so the
         // next frame does not show the camera flying across the lot.
@@ -125,13 +130,16 @@ public class PlayerController : MonoBehaviour
     public void LookAt(Vector3 worldPoint)
     {
         if (seated || cam == null) return;
-        if (thirdPerson)
+        if (UseThirdPerson)
         {
             // Aim the actual chase camera, not the driver's eyes. The camera
-            // position depends on yaw/pitch, so solve it with two or three
-            // passes; this keeps the screen center on the requested point.
+            // position depends on yaw/pitch, so solve it with a fixed-point
+            // iteration. The chase camera also shortens and collides, so the
+            // final look direction is locked to the requested point for a
+            // moment; that keeps the centre ray exactly on the target instead
+            // of a few degrees off after the camera settles.
             float y = yaw, p = pitch;
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 10; i++)
             {
                 Vector3 camPos = ThirdPersonCameraPosition(y, p);
                 Vector3 d = worldPoint - camPos;
@@ -143,18 +151,37 @@ public class PlayerController : MonoBehaviour
             pitch = Mathf.Clamp(p, -40f, 65f);
             bodyYaw = yaw;
             transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            aimLock = true;
+            aimPoint = worldPoint;
+            aimLockUntil = Time.unscaledTime + 1.5f;
+            Vector3 eyeCam = ThirdPersonCameraPosition(yaw, pitch);
+            Vector3 look = worldPoint - eyeCam;
+            if (look.sqrMagnitude > 0.0001f)
+            {
+                cam.transform.position = eyeCam;
+                cam.transform.rotation = Quaternion.LookRotation(look, Vector3.up);
+            }
             return;
         }
         // First person: the camera child's world position can still be the
         // pre-teleport one, so derive the eye from the player transform.
+        // The eye carries a small forward offset, so turning the body moves
+        // it. Iterate: aim, turn, re-derive the eye, aim again. A single pass
+        // leaves the centre ray off target when the previous view (chase cam
+        // or a different yaw) was far away, which is exactly the seal-photo
+        // case at arm's length.
         Vector3 eye = transform.position + transform.rotation * cam.transform.localPosition;
-        Vector3 dir = worldPoint - eye;
-        if (dir.sqrMagnitude < 0.001f) return;
-        yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
-        pitch = -Mathf.Atan2(dir.y, new Vector2(dir.x, dir.z).magnitude) * Mathf.Rad2Deg;
-        bodyYaw = yaw;
-        transform.rotation = Quaternion.Euler(0f, yaw, 0f);
-        cam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+        for (int i = 0; i < 4; i++)
+        {
+            Vector3 dir = worldPoint - eye;
+            if (dir.sqrMagnitude < 0.001f) return;
+            yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            pitch = -Mathf.Atan2(dir.y, new Vector2(dir.x, dir.z).magnitude) * Mathf.Rad2Deg;
+            bodyYaw = yaw;
+            transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            cam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+            eye = transform.position + transform.rotation * cam.transform.localPosition;
+        }
     }
 
     Vector3 ThirdPersonCameraPosition(float yawDeg, float pitchDeg)
@@ -169,6 +196,7 @@ public class PlayerController : MonoBehaviour
 
     public void SetLook(float yawDeg, float pitchDeg)
     {
+        aimLock = false;
         yaw = yawDeg;
         pitch = Mathf.Clamp(pitchDeg, -78f, 78f);
         if (seated)
@@ -182,7 +210,29 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    public bool CursorFree => cursorFree;
+
+    // Explicit release/capture. A released cursor stays released until the
+    // player clicks to resume, even if a menu closes or the window regains focus.
+    public void ReleaseCursor()
+    {
+        cursorFree = true;
+        ApplyCursor(false);
+    }
+
+    public void CaptureCursor()
+    {
+        cursorFree = false;
+        ApplyCursor(true);
+    }
+
     public void LockCursor(bool locked)
+    {
+        if (locked && cursorFree) return;
+        ApplyCursor(locked);
+    }
+
+    void ApplyCursor(bool locked)
     {
         wantCursorLock = locked;
         if (Application.isMobilePlatform) return;
@@ -197,7 +247,9 @@ public class PlayerController : MonoBehaviour
     public void SetUILock(bool locked)
     {
         uiLock = locked;
-        LockCursor(!locked);
+        // Menus always hand the mouse back. Closing one never grabs it again;
+        // GameFlow decides when the player has explicitly clicked to resume.
+        ReleaseCursor();
     }
 
     static readonly bool AutomationRun = System.Array.Exists(System.Environment.GetCommandLineArgs(),
@@ -212,8 +264,8 @@ public class PlayerController : MonoBehaviour
             Cursor.visible = true;
             return;
         }
-        if (hasFocus && wantCursorLock && !uiLock && !Application.isMobilePlatform)
-            LockCursor(true);
+        if (hasFocus && wantCursorLock && !uiLock && !cursorFree && !Application.isMobilePlatform)
+            ApplyCursor(true);
     }
 
     public void SetCameraHome(Vector3 localPos)
@@ -250,6 +302,7 @@ public class PlayerController : MonoBehaviour
         smoothLook = Vector2.Lerp(smoothLook, new Vector2(mx, my), k);
         if (AutomationRun) smoothLook = new Vector2(mx, my);
         mx = smoothLook.x; my = smoothLook.y;
+        if (Mathf.Abs(mx) > 0.01f || Mathf.Abs(my) > 0.01f) aimLock = false;
 
         yaw += mx;
         pitch = Mathf.Clamp(pitch - my, -78f, 78f);
@@ -351,6 +404,15 @@ public class PlayerController : MonoBehaviour
             tpDist = wantDist < tpDist ? wantDist : Mathf.Lerp(tpDist, wantDist, 1f - Mathf.Exp(-3.5f * Time.deltaTime));
             cam.transform.position = shoulder + back * tpDist + bob * 0.35f;
             cam.transform.rotation = orbit;
+            if (aimLock)
+            {
+                if (Time.unscaledTime >= aimLockUntil) aimLock = false;
+                else
+                {
+                    Vector3 look = aimPoint - cam.transform.position;
+                    if (look.sqrMagnitude > 0.0001f) cam.transform.rotation = Quaternion.LookRotation(look, Vector3.up);
+                }
+            }
             // fade the driver out rather than filling the screen with his back
             if (body != null) body.Visible = tpDist > 1.0f;
         }
@@ -367,6 +429,7 @@ public class PlayerController : MonoBehaviour
 
     public void SetThirdPerson(bool on)
     {
+        aimLock = false;
         thirdPerson = on;
         tpInit = false;
         bodyYaw = yaw; bodyYawVel = 0f;
@@ -443,7 +506,8 @@ public class PlayerController : MonoBehaviour
         cam.transform.localRotation = Quaternion.identity;
         pitch = 0f;
         yaw = 0f;
-        LockCursor(true);
+        aimLock = false;
+        CaptureCursor();
     }
 
     public void ExitTruck(Vector3 worldPos, Quaternion worldRot)
@@ -464,6 +528,7 @@ public class PlayerController : MonoBehaviour
         cc.enabled = true;
         ControlEnabled = true;
         if (thirdPersonBeforeSeat) SetThirdPerson(true);
-        LockCursor(true);
+        aimLock = false;
+        CaptureCursor();
     }
 }

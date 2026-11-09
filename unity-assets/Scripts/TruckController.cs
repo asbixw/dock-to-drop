@@ -42,6 +42,7 @@ public class TruckController : MonoBehaviour
     float wheelBase = 5.9f;
     float rearAxleZ = -3.5f;
     float wheelBottomLocal;
+    float lastBlockedMsg = -10f;
     static readonly Collider[] rotHits = new Collider[32];
     static readonly Collider[] exitHits = new Collider[24];
 

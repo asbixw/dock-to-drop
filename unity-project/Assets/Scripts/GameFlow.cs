@@ -19,10 +19,17 @@ public class GameFlow : MonoBehaviour
     Canvas hudCanvas;
     GameObject hudRoot;
     Text objectiveText, clockText, promptText, subtitleText, speedText, gearText, focusHint;
-    GameObject promptPanel, subtitlePanel, guardPanel, endPanel, speedPanel;
+    Text warningText, warningIconText;
+    Image warningIconBg;
+    RectTransform promptRect;
+    GameObject promptPanel, subtitlePanel, guardPanel, endPanel, speedPanel, warningPanel, pausePanel;
+    Coroutine warningRoutine;
+    int warningPriority;
+    float warningUntil;
+    bool paused;
     GameObject endDim;
     GameObject[] hudBase;
-    Text guardText, endKicker, endSub, endInspect, endSeal, endTime;
+    Text guardText, endKicker, endSub, endInspect, endSeal, endTime, endNote;
     Coroutine subtitleRoutine;
     bool gateOpen, gatePassed, ended;
     bool guardOpen;
@@ -43,15 +50,33 @@ public class GameFlow : MonoBehaviour
     float lastBlockedMsg = -10f, lastJackMsg = -10f;
     TrailerRig Rig => World != null ? World.trailerRig : null;
     bool InspectionDone => inspected >= 5 && sealPhotoSent;
+    string DeadheadObjective => "Deadhead " + DeadheadAssignedMiles + " mi to Gate 1 · Amazon DFW9.";
     bool autoPlayMode;
     bool uiShotMode;
     string shotDir;
+
+    // ---- deadhead -------------------------------------------------------
+    // The travel center and DFW9 are a compressed slice of a real run: the
+    // assigned 32/60 miles map onto the two-lane between the lot and Gate 1.
+    // The odometer integrates the truck's actual path, so detours count too.
+    public int DeadheadAssignedMiles { get; private set; } = 32;
+    const float DeadheadMph = 55f;
+    float deadheadRouteLength = 180f;
+    float deadheadWorld;
+    float deadheadMiles;
+    Vector3 deadheadLastPos;
+    bool deadheadActive, deadheadArrived;
+    string deadheadDepartClock = "05:40", deadheadArrivalClock = "--:--";
+    float deadheadHoldUntil;
+    GameObject tripPanel;
+    Text tripKicker, tripMiles, tripDetail, tripEta;
+    float tripRefresh;
 
     public bool BlocksInteraction => (Phone != null && Phone.IsOpen) || guardOpen || ended;
     public bool IsEnded => ended;
     public bool LoadVerified => loadVerified;
 
-    bool IsAutomation => autoShotMode || autoPlayMode || uiShotMode || HasArg("-perfprobe");
+    public bool IsAutomation => autoShotMode || autoPlayMode || uiShotMode || HasArg("-perfprobe");
 
     // When the player switches to another app, the game goes quiet and drops to a
     // low frame rate so it neither drones on in the background nor slows the Mac.
@@ -80,6 +105,9 @@ public class GameFlow : MonoBehaviour
         AudioListener.pause = !focused;
         QualitySettings.vSyncCount = focused ? 1 : 0;
         Application.targetFrameRate = focused ? 60 : 10;
+        // Losing the window is another way to lose the mouse. Pause and show
+        // the click-to-resume overlay instead of grabbing it back on refocus.
+        if (!focused && started && !ended && !(Phone != null && Phone.IsOpen) && !guardOpen) PauseGame();
     }
 
     void Start()
@@ -101,6 +129,10 @@ public class GameFlow : MonoBehaviour
         autoShotMode = HasArg("-autoshot");
         autoPlayMode = HasArg("-autoplay");
         uiShotMode = HasArg("-uishot");
+        // Dispatch picks one of two deadheads. Automation stays deterministic;
+        // -deadhead60 / -deadhead32 force a value for a test run.
+        DeadheadAssignedMiles = HasArg("-deadhead60") ? 60 : HasArg("-deadhead32") ? 32
+            : (IsAutomation ? 32 : (UnityEngine.Random.value < 0.5f ? 32 : 60));
         shotDir = Application.persistentDataPath;
         for (int i = 0; i < args.Length; i++) if (args[i] == "-shotdir" && i + 1 < args.Length) shotDir = args[i + 1];
         if (autoShotMode || uiShotMode) System.IO.Directory.CreateDirectory(shotDir);
@@ -108,7 +140,8 @@ public class GameFlow : MonoBehaviour
         // they never make sound.
         if (IsAutomation) AudioListener.volume = 0f;
         else ActivateSelf();
-        Debug.Log("D2D START auto=" + autoShotMode + " dir=" + shotDir);
+        Debug.Log("D2D START version=" + Application.version + " product=" + Application.productName
+            + " deadhead=" + DeadheadAssignedMiles + " auto=" + autoShotMode + " dir=" + shotDir);
         Audio = gameObject.AddComponent<AudioManager>();
         BuildHud();
         Debug.Log("D2D HUD built");
@@ -118,6 +151,23 @@ public class GameFlow : MonoBehaviour
         Truck = World.truck;
         Truck.player = Player;
         Truck.audio = Audio;
+        if (World.gateTrigger != null)
+        {
+            // The trigger fires when the nose of the cab enters it, not when
+            // the truck's origin reaches the trigger centre. Measure to that
+            // contact point so a straight run lands exactly on the assignment
+            // instead of reading a mile and a half short.
+            Vector3 gate = World.gateTrigger.transform.position;
+            var gateCol = World.gateTrigger.GetComponent<BoxCollider>();
+            float gateHalf = gateCol != null ? gateCol.size.z * 0.5f : 0f;
+            var hull = Truck.GetComponent<BoxCollider>();
+            float nose = hull != null ? hull.center.z + hull.size.z * 0.5f : 0f;
+            Vector3 contact = gate - World.gateTrigger.transform.forward * (gateHalf + nose);
+            deadheadRouteLength = Mathf.Max(1f, FlatXZ(contact - Truck.transform.position).magnitude);
+        }
+        deadheadLastPos = Truck.transform.position;
+        Debug.Log("D2D DEADHEAD assigned=" + DeadheadAssignedMiles + " route=" + deadheadRouteLength.ToString("F1")
+            + " scale=" + MilesPerUnit.ToString("F4") + " mi/unit");
         BuildTruckInteractions();
         Phone = new GameObject("PhoneUI").AddComponent<PhoneUI>();
         Phone.sealTarget = World.sealTarget;
@@ -219,11 +269,12 @@ public class GameFlow : MonoBehaviour
         });
         di.onInteract.AddListener(() =>
         {
-            // One press: the door swings open and the driver climbs straight in.
+            // Opening the door is one action; climbing in is a separate press so
+            // the player can look inside, back out, or walk around first.
             Truck.SetDoor(true);
             dc.enabled = false;
             sc.enabled = true;
-            StartCoroutine(ClimbInAfterDoor());
+            ShowSubtitle("Driver door open. Press E at the seat to climb in.", 2.4f);
         });
 
         // Ignition / dashboard
@@ -243,7 +294,7 @@ public class GameFlow : MonoBehaviour
             if (rig != null && rig.coupled && !rig.airSupplied)
             {
                 if (rig.linesConnected && rig.gearUp) rig.SupplyAir();
-                else ShowSubtitle("No trailer air yet: connect the glad hands and raise the landing gear first.", 3f);
+                else ShowWarning("No trailer air yet: connect the glad hands and raise the landing gear first.", 3f, 1);
             }
         });
 
@@ -263,18 +314,12 @@ public class GameFlow : MonoBehaviour
         }
     }
 
-    IEnumerator ClimbInAfterDoor()
-    {
-        yield return new WaitForSeconds(0.5f);
-        if (!Player.IsSeated && Truck.doorOpen) Truck.Enter();
-    }
-
     public void OnEnteredTruck()
     {
         Truck.SetDoor(false);
         if (doorCol != null) doorCol.enabled = false;
         if (seatCol != null) seatCol.enabled = false;
-        if (callStarted) { if (gatePassed) RefreshObjective(); else SetObjective(Truck.engineOn ? "Drive north to Gate 1 · Amazon DFW9." : "Start the engine.  [E]"); return; }
+        if (callStarted) { if (gatePassed) RefreshObjective(); else SetObjective(Truck.engineOn ? DeadheadObjective : "Start the engine.  [E]"); return; }
         callStarted = true;
         SetObjective("Answer the dispatch call.");
         if (!autoShotMode) StartCoroutine(CallAfter(3.2f));
@@ -353,8 +398,8 @@ public class GameFlow : MonoBehaviour
     public void OnEngineStarted()
     {
         if (gatePassed) { RefreshObjective(); return; }
-        SetObjective("Drive north to Gate 1 · Amazon DFW9.");
-        ShowSubtitle("Engine running. Air brake release, headlights on, and roll out.", 4f);
+        SetObjective(DeadheadObjective);
+        ShowSubtitle("Engine running. Deadhead " + DeadheadAssignedMiles + " miles to DFW9. Follow the two-lane north; Gate 1 is on the right.", 5f);
     }
 
     public void OnExitedTruck()
@@ -362,7 +407,7 @@ public class GameFlow : MonoBehaviour
         // the door is shut behind the driver; one press opens it and climbs back in
         if (doorCol != null) doorCol.enabled = true;
         if (seatCol != null) seatCol.enabled = false;
-        if (!gatePassed) { SetObjective("Climb back in and drive to Gate 1."); return; }
+        if (!gatePassed) { SetObjective(Truck.engineOn ? DeadheadObjective : "Climb back in and drive to Gate 1."); return; }
         if (InspectionDone || (Rig != null && Rig.coupled)) RefreshObjective();
         else SetObjective("Walk to trailer A-14 and run the five-point inspection.");
     }
@@ -424,7 +469,7 @@ public class GameFlow : MonoBehaviour
         string why = Mathf.Abs(lateral) > 0.24f
             ? "The kingpin is " + Mathf.RoundToInt(Mathf.Abs(lateral) * 100f) + " cm to the " + (lateral > 0f ? "right" : "left") + " of the jaws."
             : "You're coming in " + Mathf.RoundToInt(angle) + " degrees crooked.";
-        ShowSubtitle("Missed the kingpin. " + why + "\nPull forward, straighten up and back in again.", 4f);
+        ShowWarning("Missed the kingpin. " + why + " Pull forward, straighten up and back in again.", 4f, 2);
     }
 
     public void OnTugPassed()
@@ -462,14 +507,14 @@ public class GameFlow : MonoBehaviour
     {
         if (Time.time - lastJackMsg < 3f) return;
         lastJackMsg = Time.time;
-        ShowSubtitle("JACKKNIFE\nThe trailer is folding against the cab. Pull forward to straighten out.", 3.5f);
+        ShowWarning("JACKKNIFE — the trailer is folding against the cab. Pull forward to straighten out.", 3.5f, 3);
     }
 
     public void OnTrailerBlocked()
     {
         if (Time.time - lastBlockedMsg < 3f) return;
         lastBlockedMsg = Time.time;
-        ShowSubtitle("The trailer would hit something. Back up and swing wider.", 3f);
+        ShowWarning("The trailer would hit something. Back up and swing wider.", 3f, 2);
     }
 
     void UpdateCoupling()
@@ -498,7 +543,7 @@ public class GameFlow : MonoBehaviour
             if (p.z < 216f && Mathf.Abs(p.x) < 14f)
             {
                 if (InspectionDone) { Debug.Log("D2D FLOW departed"); EndShift(); }
-                else if (!departureWarned) { departureWarned = true; ShowSubtitle("Not yet: the inspection and the seal photo come first.", 3f); }
+                else if (!departureWarned) { departureWarned = true; ShowWarning("Not yet: the inspection and the seal photo come first.", 3f, 1); }
             }
         }
     }
@@ -506,6 +551,7 @@ public class GameFlow : MonoBehaviour
     public void OnGateApproach(TruckController truck)
     {
         if (gatePassed || guardOpen || ended) return;
+        CompleteDeadhead();
         guardOpen = true;
         truck.controlLock = true;
         truck.speed = 0f;
@@ -540,6 +586,7 @@ public class GameFlow : MonoBehaviour
         guardPanel.SetActive(false);
         if (Player != null) Player.SetUILock(false);
         if (mobileControls != null && mobileControls.canvas != null) mobileControls.canvas.gameObject.SetActive(true);
+        ReturnToPause();
         ShowSubtitle("Gate open. Trailer A-14 is staged on the right. Pull in, stop, and press X to exit.", 6f);
         SetObjective("Drive into the yard. Stop by A-14, then press X to exit.");
         Debug.Log("D2D GUARD passed gate");
@@ -604,14 +651,17 @@ public class GameFlow : MonoBehaviour
         endDim.SetActive(true);
         endPanel.SetActive(true);
         if (mobileControls != null && mobileControls.canvas != null) mobileControls.canvas.gameObject.SetActive(false);
-        int total = 5 * 60 + 40 + Mathf.FloorToInt(playTime / 60f);
+        int total = ShiftClockMinutes;
         int minutes = Mathf.FloorToInt(playTime / 60f);
         int secs = Mathf.FloorToInt(playTime % 60f);
-        endKicker.text = "SHIFT 01  ·  DALLAS, TX  ·  " + (total / 60 % 24).ToString("00") + ":" + (total % 60).ToString("00");
+        endKicker.text = "SHIFT 01  ·  DALLAS, TX  ·  " + ClockString(total);
         endSub.text = "Trailer A-14 is hooked, sealed, and outbound for Houston.";
         endInspect.text = inspected + "/5";
         endSeal.text = "482913";
         endTime.text = minutes + ":" + secs.ToString("00");
+        if (endNote != null)
+            endNote.text = "DEADHEAD " + deadheadMiles.ToString("F1") + " MI · ARR " + (deadheadArrived ? deadheadArrivalClock : "--:--")
+                + "   ·   LOADED 240 MI · $2,450";
     }
 
     public void Restart()
@@ -664,6 +714,105 @@ public class GameFlow : MonoBehaviour
         if (promptText == null) return;
         promptPanel.SetActive(!string.IsNullOrEmpty(text));
         promptText.text = text ?? "";
+        if (promptPanel.activeSelf) UpdatePromptPosition();
+    }
+
+    // Anchor the use prompt just above the object the centre ray is aimed at.
+    // When there is no target it sits above the driver's aim point, never in
+    // the subtitle strip at the bottom.
+    void UpdatePromptPosition()
+    {
+        if (promptPanel == null || !promptPanel.activeSelf || promptRect == null || Camera == null) return;
+        Vector3 world;
+        if (Interaction != null && Interaction.HasPrompt) world = Interaction.PromptPoint;
+        else if (Player != null) world = Player.InteractOrigin + Camera.transform.forward * 2.4f;
+        else world = Camera.transform.position + Camera.transform.forward * 2.4f;
+        Vector3 vp = Camera.WorldToViewportPoint(world);
+        var canvasRt = (RectTransform)hudRoot.transform;
+        Vector2 pos;
+        if (vp.z < 0f) pos = new Vector2(canvasRt.rect.width * 0.5f, 140f);
+        else pos = new Vector2(vp.x * canvasRt.rect.width, vp.y * canvasRt.rect.height + 52f);
+        pos.x = Mathf.Clamp(pos.x, 280f, canvasRt.rect.width - 280f);
+        pos.y = Mathf.Clamp(pos.y, 120f, canvasRt.rect.height - 100f);
+        promptRect.anchoredPosition = pos;
+    }
+
+    // ---- warnings -------------------------------------------------------
+    // Warnings have their own panel, their own lifetime, and a priority.
+    // A routine line can never replace a live higher-priority warning.
+    public void ShowWarning(string text, float seconds = 3f, int priority = 1)
+    {
+        if (warningPanel == null || warningText == null) return;
+        float now = Time.unscaledTime;
+        if (warningPanel.activeSelf && now < warningUntil && warningPriority > priority) return;
+        warningPriority = priority;
+        warningUntil = now + Mathf.Max(0.5f, seconds);
+        warningText.text = text ?? "";
+        warningPanel.SetActive(true);
+        var img = warningPanel.GetComponent<Image>();
+        if (img != null)
+            img.color = priority >= 3 ? new Color(0.46f, 0.07f, 0.035f, 0.96f)
+                      : priority == 2 ? new Color(0.34f, 0.17f, 0.025f, 0.96f)
+                      : new Color(0.05f, 0.13f, 0.19f, 0.94f);
+        if (warningIconBg != null)
+            warningIconBg.color = priority >= 3 ? new Color(1f, 0.32f, 0.20f)
+                                : priority == 2 ? new Color(1f, 0.64f, 0.16f)
+                                : new Color(0.38f, 0.78f, 1f);
+        if (warningIconText != null) warningIconText.text = priority >= 3 ? "!" : priority == 2 ? "!" : "i";
+        if (warningRoutine != null) StopCoroutine(warningRoutine);
+        warningRoutine = StartCoroutine(HideWarning(warningUntil));
+    }
+
+    IEnumerator HideWarning(float until)
+    {
+        while (Time.unscaledTime < until) yield return null;
+        if (Time.unscaledTime >= warningUntil - 0.01f)
+        {
+            if (warningPanel != null) warningPanel.SetActive(false);
+            warningPriority = 0;
+            warningRoutine = null;
+        }
+    }
+
+    // ---- pause / cursor -------------------------------------------------
+    public bool IsPaused => paused;
+
+    public void PauseGame()
+    {
+        if (!started || ended) { if (Player != null) Player.ReleaseCursor(); return; }
+        if (Player != null) Player.ReleaseCursor();
+        if (IsAutomation) return;
+        // A menu owns the mouse and keeps time running while it is open (the
+        // dispatch call is timed). It returns to pause when it closes.
+        if ((Phone != null && Phone.IsOpen) || guardOpen) return;
+        if (paused) return;
+        paused = true;
+        Time.timeScale = 0f;
+        if (pausePanel != null) pausePanel.SetActive(true);
+        if (focusHint != null) focusHint.gameObject.SetActive(false);
+        SetPrompt(null);
+    }
+
+    // Called when a menu closes. It never captures the mouse on its own: the
+    // game returns to the paused/released state and waits for an explicit click.
+    public void ReturnToPause()
+    {
+        if (Player != null) Player.ReleaseCursor();
+        if (!started || ended) return;
+        if (IsAutomation) return;
+        PauseGame();
+    }
+
+    public void ResumeGame()
+    {
+        if (ended) return;
+        if (Phone != null && Phone.IsOpen) return;
+        if (guardOpen) return;
+        paused = false;
+        Time.timeScale = 1f;
+        if (pausePanel != null) pausePanel.SetActive(false);
+        if (focusHint != null) focusHint.gameObject.SetActive(false);
+        if (Player != null) Player.CaptureCursor();
     }
 
     public void SetHudVisible(bool visible)
@@ -777,6 +926,7 @@ public class GameFlow : MonoBehaviour
     void UpdateWaypoint()
     {
         if (waypoint == null || Camera == null) return;
+        if (paused) { if (waypoint.gameObject.activeSelf) waypoint.gameObject.SetActive(false); return; }
         bool seated = Player != null && Player.IsSeated;
         if (controlsText != null && seated != waypointSeated)
         {
@@ -806,6 +956,94 @@ public class GameFlow : MonoBehaviour
     }
     int lastWaypointM = -1;
     int speedoKey = -1;
+
+    // ---- deadhead -------------------------------------------------------
+    float MilesPerUnit => deadheadRouteLength > 0.01f ? DeadheadAssignedMiles / deadheadRouteLength : 0f;
+    float DeadheadRemainingMiles => Mathf.Max(0f, DeadheadAssignedMiles - deadheadMiles);
+    int ShiftClockMinutes => 5 * 60 + 40 + Mathf.FloorToInt(playTime / 60f);
+    string ClockNow => ClockString(ShiftClockMinutes);
+    string DeadheadEta => ClockString(ShiftClockMinutes + Mathf.CeilToInt(DeadheadRemainingMiles * 60f / DeadheadMph));
+    static string ClockString(int total) => (total / 60 % 24).ToString("00") + ":" + (total % 60).ToString("00");
+
+    void UpdateDeadhead()
+    {
+        if (Truck == null) return;
+        Vector3 p = Truck.transform.position;
+        if (!started || ended || gatePassed || deadheadArrived)
+        {
+            deadheadLastPos = p;
+            return;
+        }
+        float step = FlatXZ(p - deadheadLastPos).magnitude;
+        deadheadLastPos = p;
+        // A teleport or a scene cut is not driving. At road speed a frame is
+        // well under a metre; the gate move in the staged runs is much larger.
+        if (step > 1.5f) return;
+        if (!deadheadActive)
+        {
+            if (!Truck.engineOn || step < 0.0005f) return;
+            // Departure is when the truck first rolls, not when the key turns.
+            deadheadActive = true;
+            deadheadDepartClock = ClockNow;
+        }
+        if (step < 0.0005f) return;
+        deadheadWorld += step;
+        deadheadMiles = deadheadWorld * MilesPerUnit;
+        // The slice is compressed. Advance the shift clock at road speed so a
+        // 32/60-mile deadhead arrives at a believable time instead of six
+        // seconds after it left the lot.
+        float gameMinutes = (step * MilesPerUnit) * (60f / DeadheadMph);
+        playTime += gameMinutes * 60f;
+    }
+
+    void UpdateTripHud()
+    {
+        if (tripPanel == null) return;
+        bool hold = deadheadArrived && Time.unscaledTime < deadheadHoldUntil;
+        bool show = !ended && (hold || (started && deadheadActive && !deadheadArrived && !gatePassed
+            && Truck != null && Truck.engineOn));
+        if (tripPanel.activeSelf != show) tripPanel.SetActive(show);
+        if (!show) return;
+        if (hold)
+        {
+            tripKicker.text = "DEADHEAD COMPLETE · DFW9";
+            tripMiles.text = deadheadMiles.ToString("F1") + " MI";
+            float over = deadheadMiles - DeadheadAssignedMiles;
+            tripDetail.text = "ARRIVED " + deadheadArrivalClock + " · "
+                + (over > 0.05f ? "+" + over.ToString("F1") + " MI OVER"
+                   : DeadheadRemainingMiles > 0.5f ? DeadheadRemainingMiles.ToString("F1") + " MI SHORT"
+                   : "ON ASSIGNMENT");
+            tripEta.text = "YARD MOVES NOT COUNTED";
+            return;
+        }
+        tripRefresh -= Time.unscaledDeltaTime;
+        if (tripRefresh > 0f) return;
+        tripRefresh = 0.12f;
+        tripKicker.text = "DEADHEAD · DFW9";
+        tripMiles.text = DeadheadAssignedMiles + " MI";
+        tripDetail.text = deadheadMiles.ToString("F1") + " driven · " + DeadheadRemainingMiles.ToString("F1") + " to go";
+        tripEta.text = "DEP " + deadheadDepartClock + " · ETA " + DeadheadEta;
+    }
+
+    void CompleteDeadhead()
+    {
+        if (deadheadArrived) return;
+        deadheadArrived = true;
+        deadheadActive = false;
+        deadheadArrivalClock = ClockNow;
+        bool realRun = deadheadMiles > 0.5f;
+        if (realRun) deadheadHoldUntil = Time.unscaledTime + 6f;
+        UpdateTripHud();
+        Debug.Log("D2D DEADHEAD assigned=" + DeadheadAssignedMiles + " route=" + deadheadRouteLength.ToString("F1")
+            + " drivenUnits=" + deadheadWorld.ToString("F1") + " miles=" + deadheadMiles.ToString("F2")
+            + " remaining=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
+        if (!realRun) return;
+        if (DeadheadRemainingMiles > 0.5f)
+            ShowWarning("Arrived at DFW9 " + DeadheadRemainingMiles.ToString("F1") + " mi short of the assigned deadhead.", 4f, 1);
+        else
+            ShowSubtitle("DEADHEAD COMPLETE · " + deadheadMiles.ToString("F1") + " MI · ARRIVED " + deadheadArrivalClock
+                + "\nYard moves are not counted on the trip.", 5f);
+    }
 
     // Render scale. On a Retina Mac the window is ~2940 px wide and the GPU
     // can't hold 60 fps there (play test: 21-43 fps, 200-600 ms spikes). The 3D
@@ -851,6 +1089,7 @@ public class GameFlow : MonoBehaviour
         LogPerf();
         UpdateRenderScale();
         UpdateWaypoint();
+        UpdatePromptPosition();
         if (!started)
         {
             // The start screen must work without a mouse. A lot of players launch a
@@ -860,13 +1099,24 @@ public class GameFlow : MonoBehaviour
             return;
         }
         if (ended) return;
-        playTime += Time.deltaTime;
-        UpdateCoupling();
-        if (clockText != null)
+        if (paused)
         {
-            int total = 5 * 60 + 40 + Mathf.FloorToInt(playTime / 60f);
-            clockText.text = (total / 60 % 24).ToString("00") + ":" + (total % 60).ToString("00");
+            // The pause overlay is the only thing that can resume play. Menu
+            // panels keep the cursor for themselves; a click there must not
+            // silently capture the mouse again.
+            bool menuOpen = (Phone != null && Phone.IsOpen) || guardOpen;
+            if (!menuOpen && Input.GetMouseButtonDown(0))
+            {
+                if (!Application.isFocused) ActivateSelf();
+                ResumeGame();
+            }
+            return;
         }
+        playTime += Time.deltaTime;
+        UpdateDeadhead();
+        UpdateTripHud();
+        UpdateCoupling();
+        if (clockText != null) clockText.text = ClockNow;
         if (Truck != null)
         {
             Truck.controlLock = (Phone != null && Phone.IsOpen) || guardOpen || ended;
@@ -889,41 +1139,38 @@ public class GameFlow : MonoBehaviour
                 }
             }
         }
+        bool uiWantsCursor = (Phone != null && Phone.IsOpen) || guardOpen;
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            if (Phone != null && Phone.IsOpen)
+            {
+                if (Phone.CameraActive) Phone.CloseCamera();
+                else Phone.Close();
+                return;
+            }
+            if (!guardOpen) { PauseGame(); return; }
+        }
+        if (uiWantsCursor) return;
+
         if (Input.GetKeyDown(KeyCode.Tab) || Input.GetKeyDown(KeyCode.P)) TogglePhone();
         if (Input.GetKeyDown(KeyCode.E)) Interact();
         if (Input.GetKeyDown(KeyCode.X)) ExitTruck();
-        if (Input.GetKeyDown(KeyCode.Escape))
-        {
-            if (Phone != null && Phone.IsOpen) Phone.Close();
-            else if (!guardOpen)
-            {
-                Player.LockCursor(false);
-                ShowSubtitle("Mouse released. Click the world to look around.", 2.4f);
-            }
-        }
 
-        // A windowed Mac build can lose its mouse capture when it loses focus.
-        // Clicking anywhere in the world recaptures it, so the player is never
-        // stuck with a dead camera.
-        bool uiWantsCursor = (Phone != null && Phone.IsOpen) || guardOpen;
-        if (uiWantsCursor)
+        // Escape and right-click both release the mouse and pause. Only a
+        // click on the pause overlay resumes; no menu close re-captures it.
+        if (Cursor.lockState == CursorLockMode.Locked && Input.GetMouseButtonDown(1))
         {
-            if (Cursor.lockState != CursorLockMode.None) Player.LockCursor(false);
+            PauseGame();
+            return;
         }
-        else if (Cursor.lockState == CursorLockMode.Locked && Input.GetMouseButtonDown(1))
-        {
-            // Right-click always gives the mouse back, even if keys are not arriving.
-            Player.LockCursor(false);
-            ShowSubtitle("Mouse released. Click the world to look around.", 2.4f);
-        }
-        else if (Cursor.lockState != CursorLockMode.Locked && Input.GetMouseButtonDown(0))
+        if (Cursor.lockState != CursorLockMode.Locked && !paused && Input.GetMouseButtonDown(0))
         {
             if (!Application.isFocused) ActivateSelf();
-            Player.LockCursor(true);
+            Player.CaptureCursor();
         }
         if (focusHint != null)
         {
-            bool showHint = !uiWantsCursor && Cursor.lockState != CursorLockMode.Locked;
+            bool showHint = !uiWantsCursor && !paused && Cursor.lockState != CursorLockMode.Locked;
             if (focusHint.gameObject.activeSelf != showHint) focusHint.gameObject.SetActive(showHint);
         }
     }
@@ -941,12 +1188,21 @@ public class GameFlow : MonoBehaviour
         UIFactory.TopLeft(title.rectTransform, new Vector2(74, -140), new Vector2(900, 300));
         var sub = UIFactory.Label(c.transform, "Sub", "A FREIGHT DAY SIMULATOR", 30, new Color(0.72f, 0.80f, 0.86f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(sub.rectTransform, new Vector2(80, -450), new Vector2(800, 60));
-        var copy = UIFactory.Label(c.transform, "Copy", "FREIGHTLINER CASCADIA  ·  AMAZON RELAY  ·  DFW9", 24, new Color(0.58f, 0.66f, 0.73f), TextAnchor.LowerLeft);
+        var copy = UIFactory.Label(c.transform, "Copy", "FREIGHTLINER CASCADIA  ·  DFW9  ·  DEADHEAD " + DeadheadAssignedMiles + " MI", 24, new Color(0.58f, 0.66f, 0.73f), TextAnchor.LowerLeft);
         var crt = copy.rectTransform;
         crt.anchorMin = crt.anchorMax = new Vector2(0, 0);
         crt.pivot = new Vector2(0, 0);
         crt.anchoredPosition = new Vector2(80, 268);
         crt.sizeDelta = new Vector2(900, 50);
+
+        // A visible build stamp: if this line is missing, the window is not the
+        // build that contains the HUD, ground-contact and deadhead fixes.
+        var build = UIFactory.Label(c.transform, "Build", "v" + Application.version + "  ·  BUILD 2026-11-09  ·  HUD + GROUND + DEADHEAD", 18, new Color(0.46f, 0.56f, 0.63f), TextAnchor.LowerRight);
+        var brt = build.rectTransform;
+        brt.anchorMin = brt.anchorMax = new Vector2(1, 0);
+        brt.pivot = new Vector2(1, 0);
+        brt.anchoredPosition = new Vector2(-34, 30);
+        brt.sizeDelta = new Vector2(720, 28);
         var start = UIFactory.Button(c.transform, "Start", "START SHIFT", new Vector2(430, 92), new Vector2(80, 120), new Color(1f, 0.48f, 0.10f), new Color(0.12f, 0.07f, 0.02f), 32, BeginShift);
         start.GetComponent<RectTransform>().anchorMin = start.GetComponent<RectTransform>().anchorMax = new Vector2(0, 0);
         start.GetComponent<RectTransform>().anchoredPosition = new Vector2(295, 150);
@@ -966,7 +1222,7 @@ public class GameFlow : MonoBehaviour
         startPanel.SetActive(false);
         hudCanvas.gameObject.SetActive(true);
         Player.SetUILock(false);
-        Player.LockCursor(true);
+        Player.CaptureCursor();
         Audio.StartMusic();
         Audio.PlaySfx("seat", 0.5f);
         StartCoroutine(Intro());
@@ -1026,8 +1282,10 @@ public class GameFlow : MonoBehaviour
         var seal = World.sealTarget;
         if (seal != null)
         {
-            Vector3 sealPlate = new Vector3(26.30f, 1.55f, 272.71f);
-            Player.Teleport(new Vector3(26.30f, 0.2f, 271.91f), 0f);
+            Vector3 sealPlate = seal.transform.position + World.container.TransformDirection(new Vector3(0f, -0.05f, -0.26f));
+            Vector3 sealStand = sealPlate + World.container.TransformDirection(new Vector3(0f, 0f, 0.8f));
+            sealStand.y = 0.2f;
+            Player.Teleport(sealStand, 0f);
             yield return new WaitForSeconds(0.25f);
             Player.LookAt(sealPlate);
             SetObjective("Photograph seal 482913 with your phone.  [TAB]");
@@ -1052,11 +1310,17 @@ public class GameFlow : MonoBehaviour
             Phone.Close();
         }
 
-        // End-of-shift panel with completed results.
+        // End-of-shift panel with completed results. Stage a completed
+        // deadhead so the summary reads like a real shift instead of 0.0 mi.
         yield return new WaitForSeconds(0.3f);
         inspected = 5;
         sealPhotoSent = true;
-        playTime = 7 * 60 + 42;
+        int deadheadMinutes = Mathf.CeilToInt(DeadheadAssignedMiles * 60f / DeadheadMph);
+        deadheadMiles = DeadheadAssignedMiles;
+        deadheadWorld = deadheadRouteLength;
+        deadheadArrived = true;
+        deadheadArrivalClock = ClockString(5 * 60 + 40 + deadheadMinutes);
+        playTime = (deadheadMinutes + 5) * 60f;
         EndShift();
         yield return new WaitForSeconds(0.5f);
         yield return StartCoroutine(Shot("17_end"));
@@ -1075,7 +1339,7 @@ public class GameFlow : MonoBehaviour
         started = true;
         hudCanvas.gameObject.SetActive(true);
         Player.SetUILock(false);
-        Player.LockCursor(true);
+        Player.CaptureCursor();
         yield return new WaitForSeconds(0.7f);
         yield return StartCoroutine(CineShot("02_truckstop",
             new Vector3(-8.0f, 1.55f, 18.0f), new Vector3(0f, 2.05f, 8.0f), 52f));
@@ -1128,10 +1392,28 @@ public class GameFlow : MonoBehaviour
         Truck.SetDoor(false); Player.SetLook(0f, 0f);
         yield return new WaitForSeconds(0.8f);
 
+        // Stage the first leg so the deadhead HUD can be checked in a still.
+        // The autoplay run exercises the real odometer separately.
+        Truck.engineOn = true;
+        deadheadActive = true;
+        deadheadDepartClock = "05:40";
+        deadheadWorld = deadheadRouteLength * 0.55f;
+        deadheadMiles = deadheadWorld * MilesPerUnit;
+        // Keep the staged clock consistent with the staged odometer so the
+        // still reads like a real mid-trip frame.
+        playTime = deadheadMiles * (60f / DeadheadMph) * 60f;
+        SetObjective(DeadheadObjective);
+        UpdateTripHud();
+        yield return new WaitForSeconds(0.35f);
+        yield return StartCoroutine(Shot("03i_deadhead_hud"));
+        deadheadWorld = 0f; deadheadMiles = 0f; deadheadActive = false; Truck.engineOn = false;
+        playTime = 0f;
+        UpdateTripHud();
+
         // Step out for the exterior establishing shots; the autoplay run exercises
         // the real enter/exit path separately.
         Truck.speed = 0f;
-        Truck.Exit();
+        Truck.Exit(true);
         Truck.transform.position = new Vector3(0, 0, 182);
         Truck.transform.rotation = Quaternion.identity;
         Player.Teleport(new Vector3(-5.0f, 0.22f, 173.0f), 0f);
@@ -1227,13 +1509,37 @@ public class GameFlow : MonoBehaviour
         Debug.Log("D2D PLAY engineOn=" + Truck.engineOn);
         if (!Truck.engineOn) { Truck.StartEngine(); Debug.Log("D2D PLAY engine forced"); }
 
-        // roll up to the gate and trip the guard trigger
-        Truck.transform.position = new Vector3(0f, 0f, 160f);
-        Truck.transform.rotation = Quaternion.identity;
-        Truck.speed = 24f;
+        // Deadhead for real: drive the two-lane from the lot to Gate 1 under
+        // throttle. The odometer integrates this path, so the trip panel and
+        // the arrival time are earned, not teleported.
         Truck.controlLock = false;
-        yield return new WaitForSeconds(2.2f);
-        Debug.Log("D2D PLAY guardOpen=" + guardOpen + " truckZ=" + Truck.transform.position.z);
+        Truck.touchSteer = 0f;
+        Truck.touchBrake = 0f;
+        Time.timeScale = 2f;
+        float gateT0 = Time.time;
+        float nextTripLog = 0f;
+        while (!guardOpen && !ended && Time.time - gateT0 < 75f)
+        {
+            Vector3 p = Truck.transform.position;
+            Vector3 local = Truck.transform.InverseTransformPoint(new Vector3(0f, 0f, 188f));
+            float ang = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+            Truck.touchSteer = Mathf.Clamp(ang / 20f, -1f, 1f);
+            Truck.touchThrottle = Truck.speed < 6.5f ? 0.55f : 0f;
+            if (Time.time >= nextTripLog)
+            {
+                nextTripLog = Time.time + 3f;
+                Debug.Log("D2D PLAY deadhead z=" + p.z.ToString("F1") + " speed=" + Truck.speed.ToString("F1")
+                    + " miles=" + deadheadMiles.ToString("F2") + " remaining=" + DeadheadRemainingMiles.ToString("F2")
+                    + " clock=" + ClockNow);
+            }
+            yield return null;
+        }
+        Truck.touchThrottle = 0f;
+        Truck.touchSteer = 0f;
+        Time.timeScale = 1f;
+        Debug.Log("D2D PLAY guardOpen=" + guardOpen + " truckZ=" + Truck.transform.position.z
+            + " miles=" + deadheadMiles.ToString("F2") + " remaining=" + DeadheadRemainingMiles.ToString("F2")
+            + " arrival=" + deadheadArrivalClock);
         if (!guardOpen)
         {
             OnGateApproach(Truck);
@@ -1253,6 +1559,8 @@ public class GameFlow : MonoBehaviour
         Truck.transform.rotation = Quaternion.Euler(0f, 20f, 0f);
         yield return new WaitForSeconds(0.4f);
         Truck.Exit();
+        yield return new WaitForSeconds(0.8f);
+        if (Player.IsSeated) Truck.Exit();
         yield return new WaitForSeconds(0.7f);
         Debug.Log("D2D PLAY exited seated=" + Player.IsSeated + " pos=" + Player.transform.position);
 
@@ -1303,7 +1611,9 @@ public class GameFlow : MonoBehaviour
         yield return StartCoroutine(AutoHook());
         Debug.Log("D2D PLAY END ended=" + ended + " sealPhoto=" + sealPhotoSent + " inspected=" + inspected
             + " coupled=" + (Rig != null && Rig.coupled) + " lines=" + (Rig != null && Rig.linesConnected)
-            + " gearUp=" + (Rig != null && Rig.gearUp) + " air=" + (Rig != null && Rig.airSupplied));
+            + " gearUp=" + (Rig != null && Rig.gearUp) + " air=" + (Rig != null && Rig.airSupplied)
+            + " deadhead=" + DeadheadAssignedMiles + " driven=" + deadheadMiles.ToString("F2")
+            + " remaining=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
         Application.Quit();
     }
 
@@ -1348,6 +1658,8 @@ public class GameFlow : MonoBehaviour
         yield return new WaitForSeconds(0.8f);
 
         Truck.Exit();
+        yield return new WaitForSeconds(0.8f);
+        if (Player.IsSeated) Truck.Exit();
         yield return new WaitForSeconds(0.6f);
         yield return StartCoroutine(AutoUse("lines", Truck.transform.TransformPoint(new Vector3(-3.0f, 0.2f, -3.0f)),
             Truck.transform.TransformPoint(new Vector3(-1.78f, 1.5f, -3.0f)), () => rig.linesConnected, rig.ConnectLines));
@@ -1397,7 +1709,10 @@ public class GameFlow : MonoBehaviour
             Player.LookAt(Truck.transform.TransformPoint(new Vector3(-1.95f, 1.55f, 1.55f)));
             yield return new WaitForSeconds(0.4f);
             string id = Interaction.Current != null ? Interaction.Current.id : "none";
-            Debug.Log("D2D PLAY board attempt=" + attempt + " target=" + id);
+            Debug.Log("D2D PLAY board attempt=" + attempt + " target=" + id
+                + " tp=" + Player.ThirdPersonActive + " blocked=" + BlocksInteraction
+                + " player=" + Player.transform.position + " cam=" + Camera.transform.position
+                + " fwd=" + Camera.transform.forward);
             if (id == "door" || id == "seat") Interaction.TryInteract();
             yield return new WaitForSeconds(1.0f);
         }
@@ -1531,16 +1846,20 @@ public class GameFlow : MonoBehaviour
 
     void BuildHud()
     {
-
-
         hudCanvas = UIFactory.Canvas("HUD", 20, true, true);
         hudRoot = hudCanvas.gameObject;
-        var top = UIFactory.Panel(hudRoot.transform, "Objective", new Vector2(720, 175), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.78f), true, 22);
-        UIFactory.TopLeft(top.rectTransform, new Vector2(30, -26), new Vector2(720, 175));
-        var kicker = UIFactory.Label(top.rectTransform, "Kicker", "SHIFT 01  ·  DALLAS, TX", 18, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
-        UIFactory.TopLeft(kicker.rectTransform, new Vector2(22, -16), new Vector2(660, 30));
-        objectiveText = UIFactory.Label(top.rectTransform, "Text", "", 34, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
-        UIFactory.TopLeft(objectiveText.rectTransform, new Vector2(22, -52), new Vector2(670, 100));
+
+        // Objective: deliberately small in the top-left. Safety messages have
+        // their own panel near the centre so a routine line never covers them.
+        var top = UIFactory.Panel(hudRoot.transform, "Objective", new Vector2(500, 104), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.78f), true, 18);
+        UIFactory.TopLeft(top.rectTransform, new Vector2(24, -20), new Vector2(500, 104));
+        var kicker = UIFactory.Label(top.rectTransform, "Kicker", "SHIFT 01  ·  DALLAS, TX", 14, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        UIFactory.TopLeft(kicker.rectTransform, new Vector2(18, -12), new Vector2(464, 22));
+        objectiveText = UIFactory.Label(top.rectTransform, "Text", "", 22, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
+        objectiveText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        objectiveText.verticalOverflow = VerticalWrapMode.Truncate;
+        UIFactory.TopLeft(objectiveText.rectTransform, new Vector2(18, -36), new Vector2(464, 58));
+
         var infoPanel = UIFactory.Panel(hudRoot.transform, "Info", new Vector2(380, 100), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.55f), true, 18);
         UIFactory.TopRight(infoPanel.rectTransform, new Vector2(24, -22), new Vector2(380, 100));
         clockText = UIFactory.Label(infoPanel.transform, "Clock", "05:40", 36, new Color(0.85f, 0.89f, 0.92f), TextAnchor.UpperRight, FontStyle.Bold);
@@ -1551,6 +1870,22 @@ public class GameFlow : MonoBehaviour
         BuildWaypoint();
         controls.horizontalOverflow = HorizontalWrapMode.Overflow;
         UIFactory.TopRight(controls.rectTransform, new Vector2(20, -60), new Vector2(330, 26));
+
+        // Deadhead trip: assigned miles, actual odometer, miles left and ETA.
+        // It only appears while the truck is rolling toward DFW9; the yard
+        // moves after the gate are explicitly not part of the trip.
+        var tp = UIFactory.Panel(hudRoot.transform, "Trip", new Vector2(380, 152), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.64f), true, 18);
+        UIFactory.TopRight(tp.rectTransform, new Vector2(24, -132), new Vector2(380, 152));
+        tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · DFW9", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        UIFactory.TopLeft(tripKicker.rectTransform, new Vector2(18, -12), new Vector2(344, 22));
+        tripMiles = UIFactory.Label(tp.transform, "Miles", "32 MI", 38, new Color(0.94f, 0.96f, 0.98f), TextAnchor.UpperLeft, FontStyle.Bold);
+        UIFactory.TopLeft(tripMiles.rectTransform, new Vector2(18, -32), new Vector2(200, 46));
+        tripDetail = UIFactory.Label(tp.transform, "Detail", "0.0 driven · 32.0 to go", 17, new Color(0.74f, 0.82f, 0.87f), TextAnchor.UpperLeft);
+        UIFactory.TopLeft(tripDetail.rectTransform, new Vector2(18, -82), new Vector2(344, 24));
+        tripEta = UIFactory.Label(tp.transform, "Eta", "DEP 05:40 · ETA 06:15", 16, new Color(0.58f, 0.72f, 0.80f), TextAnchor.UpperLeft);
+        UIFactory.TopLeft(tripEta.rectTransform, new Vector2(18, -108), new Vector2(344, 24));
+        tripPanel = tp.gameObject;
+        tripPanel.SetActive(false);
 
         var phoneHint = UIFactory.Label(hudRoot.transform, "PhoneHint", "TAB  PHONE", 22, new Color(0.8f, 0.85f, 0.88f), TextAnchor.LowerRight, FontStyle.Bold);
         phoneHint.rectTransform.anchorMin = phoneHint.rectTransform.anchorMax = new Vector2(1, 0);
@@ -1586,22 +1921,78 @@ public class GameFlow : MonoBehaviour
         speedPanel = speedo.gameObject;
         speedPanel.SetActive(false);
 
-        var pp = UIFactory.Panel(hudRoot.transform, "Prompt", new Vector2(620, 64), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.88f), true, 16);
-        UIFactory.BottomCenter(pp.rectTransform, new Vector2(0, 130), new Vector2(620, 64));
+        // Use prompt: anchored to the object the centre ray is aimed at, not
+        // parked at the bottom of the screen. UpdatePromptPosition moves it.
+        var pp = UIFactory.Panel(hudRoot.transform, "Prompt", new Vector2(520, 56), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.90f), true, 16);
+        promptRect = pp.rectTransform;
+        promptRect.anchorMin = promptRect.anchorMax = Vector2.zero;
+        promptRect.pivot = new Vector2(0.5f, 0.5f);
+        promptRect.anchoredPosition = new Vector2(960, 220);
         promptPanel = pp.gameObject;
-        promptText = UIFactory.Label(pp.rectTransform, "Text", "", 30, Color.white, TextAnchor.MiddleCenter);
-        UIFactory.Stretch(promptText.rectTransform, 12, 12, 8, 8);
+        promptText = UIFactory.Label(pp.rectTransform, "Text", "", 24, Color.white, TextAnchor.MiddleCenter);
+        UIFactory.Stretch(promptText.rectTransform, 12, 12, 6, 6);
+        promptText.horizontalOverflow = HorizontalWrapMode.Wrap;
         promptPanel.SetActive(false);
 
-        var sp = UIFactory.Panel(hudRoot.transform, "Subtitle", new Vector2(920, 130), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.86f), true, 16);
-        UIFactory.BottomCenter(sp.rectTransform, new Vector2(0, 220), new Vector2(920, 130));
-        subtitleText = UIFactory.Label(sp.rectTransform, "Text", "", 30, new Color(0.94f, 0.96f, 0.98f), TextAnchor.MiddleCenter);
-        UIFactory.Stretch(subtitleText.rectTransform, 20, 20, 12, 12);
+        // Safety warning: centre screen, icon, priority colour. This is a
+        // separate panel from subtitles so routine dialogue cannot erase it.
+        var wp = UIFactory.Panel(hudRoot.transform, "Warning", new Vector2(780, 96), Vector2.zero, new Color(0.34f, 0.08f, 0.04f, 0.95f), true, 18);
+        var wrt = wp.rectTransform;
+        wrt.anchorMin = wrt.anchorMax = new Vector2(0.5f, 0.5f);
+        wrt.pivot = new Vector2(0.5f, 0.5f);
+        wrt.anchoredPosition = new Vector2(0, 150);
+        warningPanel = wp.gameObject;
+        warningIconBg = UIFactory.Panel(wrt, "IconBg", new Vector2(56, 56), Vector2.zero, new Color(1f, 0.55f, 0.15f), true, 14);
+        var ibr = warningIconBg.rectTransform;
+        ibr.anchorMin = ibr.anchorMax = new Vector2(0f, 0.5f);
+        ibr.pivot = new Vector2(0f, 0.5f);
+        ibr.anchoredPosition = new Vector2(20, 0);
+        warningIconText = UIFactory.Label(ibr, "Icon", "!", 34, new Color(0.10f, 0.06f, 0.02f), TextAnchor.MiddleCenter, FontStyle.Bold);
+        UIFactory.Stretch(warningIconText.rectTransform, 0, 0, 0, 0);
+        warningText = UIFactory.Label(wrt, "Text", "", 24, Color.white, TextAnchor.MiddleLeft, FontStyle.Bold);
+        warningText.rectTransform.anchorMin = new Vector2(0, 0);
+        warningText.rectTransform.anchorMax = new Vector2(1, 1);
+        warningText.rectTransform.offsetMin = new Vector2(92, 8);
+        warningText.rectTransform.offsetMax = new Vector2(-18, -8);
+        warningText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        warningPanel.SetActive(false);
+
+        // Dialogue subtitles stay near the bottom, out of the warning's way.
+        var sp = UIFactory.Panel(hudRoot.transform, "Subtitle", new Vector2(920, 110), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.86f), true, 16);
+        UIFactory.BottomCenter(sp.rectTransform, new Vector2(0, 96), new Vector2(920, 110));
+        subtitleText = UIFactory.Label(sp.rectTransform, "Text", "", 28, new Color(0.94f, 0.96f, 0.98f), TextAnchor.MiddleCenter);
+        UIFactory.Stretch(subtitleText.rectTransform, 20, 20, 10, 10);
         subtitlePanel = sp.gameObject;
         subtitlePanel.SetActive(false);
 
         BuildGuard();
+        BuildPause();
         BuildEnd();
+    }
+
+    void BuildPause()
+    {
+        var dim = UIFactory.Full(hudRoot.transform, "Pause", new Color(0.006f, 0.010f, 0.016f, 0.62f));
+        dim.raycastTarget = true;
+        pausePanel = dim.gameObject;
+        var box = UIFactory.Panel(dim.transform, "Box", new Vector2(600, 220), Vector2.zero, new Color(0.035f, 0.05f, 0.065f, 0.98f), true, 22);
+        box.rectTransform.anchorMin = box.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        box.rectTransform.anchoredPosition = Vector2.zero;
+        var title = UIFactory.Label(box.rectTransform, "Title", "PAUSED", 48, new Color(0.96f, 0.95f, 0.90f), TextAnchor.MiddleCenter, FontStyle.Bold);
+        title.rectTransform.anchorMin = title.rectTransform.anchorMax = new Vector2(0.5f, 1);
+        title.rectTransform.pivot = new Vector2(0.5f, 1);
+        title.rectTransform.anchoredPosition = new Vector2(0, -24);
+        title.rectTransform.sizeDelta = new Vector2(540, 60);
+        var sub = UIFactory.Label(box.rectTransform, "Sub", "CLICK TO RESUME", 26, new Color(1f, 0.62f, 0.24f), TextAnchor.MiddleCenter, FontStyle.Bold);
+        sub.rectTransform.anchorMin = sub.rectTransform.anchorMax = new Vector2(0.5f, 0);
+        sub.rectTransform.pivot = new Vector2(0.5f, 0);
+        sub.rectTransform.anchoredPosition = new Vector2(0, 34);
+        sub.rectTransform.sizeDelta = new Vector2(540, 40);
+        var note = UIFactory.Label(box.rectTransform, "Note", "Escape and right-click release the mouse. Click anywhere to take the controls again.", 17, new Color(0.62f, 0.72f, 0.78f), TextAnchor.MiddleCenter);
+        note.rectTransform.anchorMin = note.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        note.rectTransform.anchoredPosition = new Vector2(0, -20);
+        note.rectTransform.sizeDelta = new Vector2(540, 50);
+        pausePanel.SetActive(false);
     }
 
     void BuildGuard()
@@ -1664,7 +2055,8 @@ public class GameFlow : MonoBehaviour
         endTime = Stat(panel.rectTransform, 380, "SHIFT TIME", "7:42", "READY TO ROLL", new Color(0.83f, 0.90f, 0.94f));
 
         var note = UIFactory.Label(panel.rectTransform, "Note", "LOAD #D2D-0612   ·   DFW9 → DWH1   ·   240 MI   ·   $2,450", 26, new Color(0.68f, 0.77f, 0.83f), TextAnchor.UpperLeft);
-        UIFactory.TopLeft(note.rectTransform, new Vector2(54, -478), new Vector2(1000, 38));
+        UIFactory.TopLeft(note.rectTransform, new Vector2(54, -478), new Vector2(1080, 38));
+        endNote = note;
 
         var b = UIFactory.Button(panel.rectTransform, "Restart", "DRIVE AGAIN", new Vector2(470, 88), Vector2.zero, new Color(1f, 0.48f, 0.10f), new Color(0.12f, 0.07f, 0.02f), 30, Restart);
         b.GetComponent<RectTransform>().anchorMin = b.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0);

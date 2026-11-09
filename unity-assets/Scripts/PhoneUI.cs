@@ -128,7 +128,7 @@ public class PhoneUI : MonoBehaviour
         var rule = UIFactory.Img(loadView.transform, "Rule", new Vector2(804, 2), Vector2.zero, new Color(1f, 1f, 1f, 0.10f));
         UIFactory.TopLeft(rule.rectTransform, new Vector2(10, -268), new Vector2(804, 2));
 
-        string rows = "SHIPPER     Amazon.com Services LLC\nFACILITY    Amazon DFW9\nADDRESS     4800 Industrial Blvd\nRECEIVER    Amazon DWH1\nADDRESS     9200 Harbor Road\nEQUIPMENT   53' dry container\nWEIGHT      38,500 lb\nSEAL        482913\nCOMMODITY   Palletized retail\nMILES       240";
+        string rows = "SHIPPER     Amazon.com Services LLC\nFACILITY    Amazon DFW9\nADDRESS     4800 Industrial Blvd\nRECEIVER    Amazon DWH1\nADDRESS     9200 Harbor Road\nEQUIPMENT   53' dry container\nWEIGHT      38,500 lb\nSEAL        482913\nCOMMODITY   Palletized retail\nDEADHEAD    " + flow.DeadheadAssignedMiles + " mi empty · travel center → DFW9\nLINEHAUL    240 mi loaded · DFW9 → DWH1";
         var table = UIFactory.Label(loadView.transform, "Table", rows, 30, new Color(0.82f, 0.87f, 0.91f), TextAnchor.UpperLeft);
         table.lineSpacing = 1.08f;
         UIFactory.TopLeft(table.rectTransform, new Vector2(12, -292), new Vector2(800, 480));
@@ -166,6 +166,7 @@ public class PhoneUI : MonoBehaviour
         vlg.childControlHeight = true;
         vlg.childControlWidth = true;
         AddChat("Morning, driver. Amazon load is booked. Details below.", false);
+        AddChat("Deadhead " + flow.DeadheadAssignedMiles + " miles to DFW9 first. Empty, then the loaded run to Houston.", false);
         AddDispatchShot();
         AddChat("Copy. Reviewing now.", true);
         var send = UIFactory.Button(chatView.transform, "Send", "SEAL PHOTO", new Vector2(804, 88), new Vector2(0, -1120), new Color(0.13f, 0.20f, 0.26f), Color.white, 30, () => { ShowCamera(sealTarget); });
@@ -357,7 +358,7 @@ public class PhoneUI : MonoBehaviour
     void AddDispatchShot()
     {
         var card = UIFactory.Panel(chatContent, "Shot", new Vector2(780, 280), Vector2.zero, new Color(0.08f, 0.12f, 0.16f), true, 18);
-        var t = UIFactory.Label(card.rectTransform, "T", "DISPATCH SCREENSHOT\nAMAZON RELAY · BOOKED\nDFW9 → DWH1  ·  $2,450\n240 MI  ·  53' DRY  ·  38,500 LB", 28, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
+        var t = UIFactory.Label(card.rectTransform, "T", "DISPATCH SCREENSHOT\nAMAZON RELAY · BOOKED\nDEADHEAD " + flow.DeadheadAssignedMiles + " MI  ·  EMPTY\nDFW9 → DWH1  ·  240 MI LOADED\n$2,450  ·  53' DRY  ·  38,500 LB", 28, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
         UIFactory.Stretch(t.rectTransform, 24, 24, 20, 20);
         var le = card.gameObject.AddComponent<LayoutElement>();
         le.minHeight = 250;
@@ -417,6 +418,7 @@ public class PhoneUI : MonoBehaviour
         flow.SetInspectionMarkers(true);
         flow.SetHudVisible(true);
         flow.Player.SetUILock(false);
+        flow.ReturnToPause();
     }
 
     public void ShowIncomingCall(Action answer, Action decline)
@@ -468,6 +470,7 @@ public class PhoneUI : MonoBehaviour
         root.SetActive(false);
         flow.SetHudVisible(true);
         flow.Player.SetUILock(false);
+        flow.ReturnToPause();
     }
 
     public void ShowCamera(PhotoTarget target)
@@ -482,15 +485,19 @@ public class PhoneUI : MonoBehaviour
         cameraView.SetActive(true);
         cameraActive = true;
         flow.Player.ForceFirstPerson = true;
+        // Re-aim from the eye: the player may have lined the shot up in third
+        // person, where the chase camera's parallax puts the seal off-centre
+        // once the view moves to the driver's head.
+        if (target != null) flow.Player.LookAt(target.transform.position);
         flow.SetInspectionMarkers(false);
         Debug.Log("D2D CAMERA phone=False bezel=False dim=False camera=True");
-        cameraHint.text = "CENTER THE SEAL NUMBER IN THE FRAME";
+        cameraHint.text = "CENTER THE SEAL NUMBER IN THE FRAME\nCLICK / SPACE  TAKE PHOTO   ·   ESC  BACK";
         ApplyCameraFov();
         flow.SetPrompt(null);
         flow.ClearSubtitle();
         flow.SetHudVisible(false);
         flow.Player.SetUILock(false);
-        flow.Player.LockCursor(true);
+        flow.Player.CaptureCursor();
     }
 
     void ApplyCameraFov()
@@ -521,7 +528,7 @@ public class PhoneUI : MonoBehaviour
         flow.SetInspectionMarkers(true);
         flow.SetHudVisible(true);
         flow.Player.SetUILock(false);
-        flow.Player.LockCursor(true);
+        flow.ReturnToPause();
     }
 
     public void Capture()
@@ -533,7 +540,6 @@ public class PhoneUI : MonoBehaviour
     IEnumerator CaptureRoutine()
     {
         cameraActive = false;
-        flow.Player.ForceFirstPerson = false;
         cameraView.SetActive(false);
         if (audio != null) audio.Shutter();
         flow.SetHudVisible(false);
@@ -544,6 +550,13 @@ public class PhoneUI : MonoBehaviour
         var old = cam.targetTexture;
         cam.targetTexture = rt;
         cam.Render();
+        // Validate against the camera that actually took the shot, before the
+        // gameplay camera is restored.
+        bool valid = ValidateSeal();
+        // The shot is taken from the eyes. Restore the gameplay camera only
+        // after the render, otherwise a third-person player photographs the
+        // back of their own head and the seal fails validation.
+        flow.Player.ForceFirstPerson = false;
         RenderTexture.active = rt;
         int px = Mathf.RoundToInt(Screen.width * CameraRectMin.x);
         int py = Mathf.RoundToInt(Screen.height * CameraRectMin.y);
@@ -559,7 +572,6 @@ public class PhoneUI : MonoBehaviour
         RestoreFov();
         root.SetActive(true);
         lastPhoto = tex;
-        bool valid = ValidateSeal();
         ShowPreview(tex, valid);
     }
 
@@ -568,10 +580,13 @@ public class PhoneUI : MonoBehaviour
         if (sealTarget == null) return false;
         var cam = flow.Camera;
         Vector3 vp = cam.WorldToViewportPoint(sealTarget.transform.position);
-        if (vp.z < 0 || vp.x < CameraRectMin.x + 0.02f || vp.x > CameraRectMax.x - 0.02f) return false;
-        if (vp.y < CameraRectMin.y + 0.04f || vp.y > CameraRectMax.y - 0.04f) return false;
-        if (Vector3.Distance(cam.transform.position, sealTarget.transform.position) > 5.2f) return false;
-        return true;
+        float dist = Vector3.Distance(cam.transform.position, sealTarget.transform.position);
+        bool ok = !(vp.z < 0 || vp.x < CameraRectMin.x + 0.02f || vp.x > CameraRectMax.x - 0.02f
+            || vp.y < CameraRectMin.y + 0.04f || vp.y > CameraRectMax.y - 0.04f || dist > 5.2f);
+        Debug.Log("D2D SEALCHECK ok=" + ok + " vp=" + vp + " dist=" + dist.ToString("F2")
+            + " cam=" + cam.transform.position + " seal=" + sealTarget.transform.position
+            + " fp=" + flow.Player.ForceFirstPerson + " tp=" + flow.Player.ThirdPersonActive);
+        return ok;
     }
 
     void ShowPreview(Texture2D tex, bool valid)
@@ -583,6 +598,7 @@ public class PhoneUI : MonoBehaviour
         previewImage.texture = tex;
         previewStatus.text = valid ? "Seal 482913 is legible and in frame." : "Seal number is not in frame. Retake.";
         previewStatus.color = valid ? new Color(0.4f, 0.95f, 0.65f) : new Color(1f, 0.45f, 0.4f);
+        flow.Player.ReleaseCursor();
     }
 
     public void SendPhoto()
@@ -598,7 +614,7 @@ public class PhoneUI : MonoBehaviour
         RestoreFov();
         flow.SetHudVisible(true);
         flow.Player.SetUILock(false);
-        flow.Player.LockCursor(true);
+        flow.ReturnToPause();
     }
 
     void RefreshPhotos()
@@ -648,7 +664,8 @@ public class PhoneUI : MonoBehaviour
         if (cameraActive)
         {
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return)) Capture();
-            if (Input.GetKeyDown(KeyCode.Escape)) CloseCamera();
+            // Escape is handled by GameFlow so the camera and the phone cannot
+            // both consume the same key and leave the cursor in a mixed state.
         }
     }
 }

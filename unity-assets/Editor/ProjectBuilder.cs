@@ -22,7 +22,7 @@ public static class ProjectBuilder
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
         PlayerSettings.companyName = "Dock to Drop";
         PlayerSettings.productName = "Dock to Drop";
-        PlayerSettings.bundleVersion = "0.2.0";
+        PlayerSettings.bundleVersion = "0.3.0";
         PlayerSettings.colorSpace = ColorSpace.Linear;
         PlayerSettings.defaultScreenWidth = 1600;
         PlayerSettings.defaultScreenHeight = 900;

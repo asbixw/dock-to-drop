@@ -10,6 +10,8 @@ public class InteractionSystem : MonoBehaviour
     readonly RaycastHit[] hits = new RaycastHit[16];
 
     public Interactable Current => current;
+    public bool HasPrompt => current != null;
+    public Vector3 PromptPoint => current != null ? current.transform.position : Vector3.zero;
 
     void Update()
     {

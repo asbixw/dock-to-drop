@@ -41,6 +41,10 @@ public class TruckController : MonoBehaviour
     Quaternion wheelRest;
     float wheelBase = 5.9f;
     float rearAxleZ = -3.5f;
+    float wheelBottomLocal;
+    float lastBlockedMsg = -10f;
+    static readonly Collider[] rotHits = new Collider[32];
+    static readonly Collider[] exitHits = new Collider[24];
 
     // drivetrain
     static readonly float[] Ratios = { 12.8f, 9.25f, 6.76f, 4.90f, 3.58f, 2.61f, 1.89f, 1.38f, 1.00f, 0.73f };
@@ -114,6 +118,14 @@ public class TruckController : MonoBehaviour
         var wheels = new System.Collections.Generic.List<Renderer>();
         foreach (var r in GetComponentsInChildren<Renderer>(true))
             if (r.name.StartsWith("Wheel_")) wheels.Add(r);
+
+        // The FBX tyres bottom out at y=0.011, not 0. Measure it once so the
+        // whole tractor can sit on the visible pavement instead of sinking into it.
+        float minWheelY = float.MaxValue;
+        foreach (var r in wheels)
+            minWheelY = Mathf.Min(minWheelY, transform.InverseTransformPoint(r.bounds.min).y);
+        wheelBottomLocal = wheels.Count > 0 && minWheelY < float.MaxValue ? minWheelY : 0f;
+        Debug.Log("D2D TRUCK wheelBottom=" + wheelBottomLocal.ToString("F3"));
 
         // body pivot near axle height; every existing child moves under it
         bodyPivot = new GameObject("BodyPivot").transform;
@@ -203,19 +215,50 @@ public class TruckController : MonoBehaviour
         if (flow != null) flow.OnEnteredTruck();
     }
 
-    public void Exit()
+    // force is for the scripted camera tour only; normal play must open the
+    // door and find a clear patch of ground before the driver steps out.
+    public bool Exit(bool force = false)
     {
-        if (!driving || Mathf.Abs(speed) > 0.35f) return;
+        if (!driving || Mathf.Abs(speed) > 0.35f) return false;
+        if (!force && !doorOpen)
+        {
+            SetDoor(true);
+            if (flow != null) flow.ShowSubtitle("Driver door open. Press X again to step out.", 2.4f);
+            return false;
+        }
+        Vector3 p = exitPoint != null ? exitPoint.position : transform.position + transform.right * -2.5f;
+        Quaternion r = Quaternion.Euler(0f, transform.eulerAngles.y - 90f, 0f);
+        float ground = GroundContact.HeightAt(p, transform, hooked != null ? hooked.transform : null, p.y);
+        p.y = ground + 0.02f;
+        if (!force && !HasStandingRoom(p))
+        {
+            if (flow != null) flow.ShowWarning("No room to step out on this side.", 3f, 2);
+            return false;
+        }
         driving = false;
         engineOn = false;
         if (audio != null) audio.StopEngine();
-        if (player != null)
-        {
-            Vector3 p = exitPoint != null ? exitPoint.position : transform.position + transform.right * -2.5f;
-            Quaternion r = Quaternion.Euler(0f, transform.eulerAngles.y - 90f, 0f);
-            player.ExitTruck(p, r);
-        }
+        if (player != null) player.ExitTruck(p, r);
         if (flow != null) flow.OnExitedTruck();
+        return true;
+    }
+
+    bool HasStandingRoom(Vector3 p)
+    {
+        Vector3 a = p + Vector3.up * 0.42f;
+        Vector3 b = p + Vector3.up * 1.42f;
+        int n = Physics.OverlapCapsuleNonAlloc(a, b, 0.32f, exitHits, ~(1 << 2), QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < n; i++)
+        {
+            var c = exitHits[i];
+            if (c == null) continue;
+            if (c.transform.IsChildOf(transform)) continue;
+            if (hooked != null && c.transform.IsChildOf(hooked.transform)) continue;
+            if (flow != null && flow.Player != null && c.transform.IsChildOf(flow.Player.transform)) continue;
+            if (c.bounds.max.y < p.y + 0.18f) continue;
+            return false;
+        }
+        return true;
     }
 
     public void ToggleDoor()
@@ -253,6 +296,7 @@ public class TruckController : MonoBehaviour
 
     void Update()
     {
+        UpdateGroundHeight(Time.deltaTime);
         if (!driving || controlLock) { UpdateVisuals(0f); return; }
 
         float v = Input.GetAxisRaw("Vertical");
@@ -362,6 +406,16 @@ public class TruckController : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.F)) ToggleHeadlights();
     }
 
+    void UpdateGroundHeight(float dt)
+    {
+        Transform trailer = hooked != null ? hooked.transform : (hookTarget != null ? hookTarget.transform : null);
+        float ground = GroundContact.HeightAt(transform.position, transform, trailer, transform.position.y - wheelBottomLocal);
+        float target = ground - wheelBottomLocal;
+        float y = dt > 0f ? Mathf.MoveTowards(transform.position.y, target, 5.5f * dt) : target;
+        if (Mathf.Abs(y - transform.position.y) > 1e-5f)
+            transform.position = new Vector3(transform.position.x, y, transform.position.z);
+    }
+
     void Move(float steerInput)
     {
         float dt = Time.deltaTime;
@@ -394,7 +448,29 @@ public class TruckController : MonoBehaviour
         {
             // turn about the rear tandem so the tail tracks inside the cab, like a real tractor
             Vector3 pivot = transform.TransformPoint(new Vector3(0f, 0f, rearAxleZ));
-            if (Mathf.Abs(speed) > 0.01f) transform.RotateAround(pivot, Vector3.up, yawRate * dt);
+            float deltaYaw = yawRate * dt;
+            if (Mathf.Abs(deltaYaw) > 0.01f)
+            {
+                Quaternion turn = Quaternion.AngleAxis(deltaYaw, Vector3.up);
+                Quaternion candidateRot = turn * transform.rotation;
+                Vector3 candidatePos = pivot + turn * (transform.position - pivot);
+                // A forward cast alone misses the cab's sideways sweep. Test the
+                // candidate pose and only refuse if it is a new overlap.
+                if (RotationBlocked(candidateRot, candidatePos) && !RotationBlocked(transform.rotation, transform.position))
+                {
+                    yawRate = 0f;
+                    speed = 0f;
+                    throttleSmooth = 0f;
+                    if (flow != null && Time.time - lastBlockedMsg > 3f)
+                    {
+                        lastBlockedMsg = Time.time;
+                        flow.ShowWarning("The cab would swing into something. Straighten up and try again.", 3f, 2);
+                    }
+                    deltaYaw = 0f;
+                    step = 0f;
+                }
+                if (Mathf.Abs(speed) > 0.01f) transform.RotateAround(pivot, Vector3.up, deltaYaw);
+            }
             transform.position += transform.forward * step;
         }
         if (hooked == null && hookTarget != null && step < 0f) CheckCoupling();
@@ -441,6 +517,34 @@ public class TruckController : MonoBehaviour
             if (h.distance <= 0f && h.point == Vector3.zero) continue;   // started overlapping
             if (h.distance < best) best = h.distance;
         }
+    }
+
+    bool RotationBlocked(Quaternion rot, Vector3 pos)
+    {
+        if (hull == null) return false;
+        float front = hull.center.z + hull.size.z * 0.5f, back = hull.center.z - hull.size.z * 0.5f;
+        const float split = -2.35f;
+        float w = hull.size.x * 0.96f;
+        Vector3 cabC = pos + rot * new Vector3(0f, 2.3f, (front + split) * 0.5f);
+        Vector3 cabH = new Vector3(w, Mathf.Max(0.5f, hull.size.y - 0.7f), front - split) * 0.5f;
+        Vector3 frameC = pos + rot * new Vector3(0f, 0.68f, (split + back) * 0.5f);
+        Vector3 frameH = new Vector3(w, 0.62f, split - back) * 0.5f;
+        return OverlapBlocked(cabC, cabH * 0.98f, rot) || OverlapBlocked(frameC, frameH * 0.98f, rot);
+    }
+
+    bool OverlapBlocked(Vector3 centre, Vector3 half, Quaternion rot)
+    {
+        int n = Physics.OverlapBoxNonAlloc(centre, half, rotHits, rot, ~(1 << 2), QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < n; i++)
+        {
+            var c = rotHits[i];
+            if (c == null) continue;
+            if (c.transform.IsChildOf(transform)) continue;
+            if (hooked != null && c.transform.IsChildOf(hooked.transform)) continue;
+            if (flow != null && flow.Player != null && c.transform.IsChildOf(flow.Player.transform)) continue;
+            return true;
+        }
+        return false;
     }
 
     // Backing under the trailer: when the fifth wheel reaches the kingpin the
