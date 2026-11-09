@@ -177,7 +177,22 @@ public class TrailerRig : MonoBehaviour
             gearCollider.center = gearCenterRest;
             gearCollider.size = new Vector3(feet.size.x + 0.1f, gearHeight, 0.6f);
         }
-        lastAxle = AxleGround();
+        // Parked, stand the tandem on the same measured wheel bottom the coupled
+        // pose uses. The old fixed y in WorldBuilder could disagree with the
+        // FBX by a centimetre or two, so the trailer changed height when the
+        // jaws closed. The fallback keeps the current height if the ground
+        // colliders have not synced yet during world build.
+        if (!coupled)
+        {
+            Vector3 axle = transform.TransformPoint(new Vector3(0f, 0f, axleLocalZ));
+            float g = GroundContact.HeightAt(axle, transform, tractor != null ? tractor.transform : null,
+                transform.position.y + wheelBottom);
+            Vector3 parked = transform.position;
+            parked.y = g - wheelBottom;
+            transform.position = parked;
+            lastAxle = new Vector3(axle.x, parked.y, axle.z);
+        }
+        else lastAxle = AxleGround();
         lastYaw = transform.eulerAngles.y;
         Debug.Log("D2D TRAILER kingpin=" + kingpinLocal.ToString("F2") + " axleZ=" + axleLocalZ.ToString("F2") + " nose=" + noseLocalZ.ToString("F2")
             + " rear=" + rearLocalZ.ToString("F2") + " halfW=" + halfWidth.ToString("F2") + " top=" + bodyTop.ToString("F2")
@@ -210,7 +225,10 @@ public class TrailerRig : MonoBehaviour
 
     Vector3 GroundAt(float x, float z)
     {
-        float g = GroundContact.HeightAt(new Vector3(x, 0f, z), transform, tractor != null ? tractor.transform : null, 0f);
+        // If the ray misses (for example while the world is still being built),
+        // keep the trailer at its current height instead of dropping it to y=0.
+        float fallback = transform.position.y + wheelBottom;
+        float g = GroundContact.HeightAt(new Vector3(x, 0f, z), transform, tractor != null ? tractor.transform : null, fallback);
         return new Vector3(x, g - wheelBottom, z);
     }
 

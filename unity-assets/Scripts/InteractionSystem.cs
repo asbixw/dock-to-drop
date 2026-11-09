@@ -22,19 +22,15 @@ public class InteractionSystem : MonoBehaviour
             return;
         }
 
-        // Aim from the actual camera so the center of the screen is the cursor.
-        // Reach is still judged from the driver, not the camera, so a third-person
-        // camera sitting 4 m back does not give the player 4 m of extra arms.
+        // Cast from the driver's eyes/head, not the camera body. The camera still
+        // supplies the screen-centre direction, but a third-person camera sitting
+        // metres back no longer reaches objects the driver could not touch.
         var pc = flow.Player;
-        Vector3 origin = cam.transform.position;
+        Vector3 origin = pc != null ? pc.InteractOrigin : cam.transform.position;
         Vector3 dir = cam.transform.forward;
-        Vector3 driver = pc != null ? pc.InteractOrigin : origin;
         float reach = distance;
-        float max = reach;
-        if (pc != null && pc.ThirdPersonActive)
-            max += Vector3.Distance(origin, driver);
 
-        int count = Physics.RaycastNonAlloc(origin, dir, hits, max, mask, QueryTriggerInteraction.Collide);
+        int count = Physics.RaycastNonAlloc(origin, dir, hits, reach, mask, QueryTriggerInteraction.Collide);
         bool found = false;
         RaycastHit nearest = default;
         float nearestDist = float.MaxValue;
@@ -58,7 +54,7 @@ public class InteractionSystem : MonoBehaviour
         if (found)
         {
             var it = nearest.collider.GetComponentInParent<Interactable>();
-            if (it != null && it.CanUse && Vector3.Distance(driver, nearest.point) <= reach)
+            if (it != null && it.CanUse && Vector3.Distance(origin, nearest.point) <= reach)
             {
                 SetCurrent(it);
                 return;

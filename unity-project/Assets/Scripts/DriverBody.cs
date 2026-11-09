@@ -10,7 +10,7 @@ public class DriverBody : MonoBehaviour
     public Transform model;
     Animation anim;
     Transform head, rig;
-    string idle, walk, jog, drive, interact;
+    string idle, walk, jog, drive, sit, interact;
     string current;
     Vector3 lastPos;
     float planarSpeed;
@@ -45,6 +45,7 @@ public class DriverBody : MonoBehaviour
                 else if (n.EndsWith("Walk")) walk = n;
                 else if (n.EndsWith("Jog")) jog = n;
                 else if (n.EndsWith("Drive")) drive = n;
+                else if (n.EndsWith("Sit")) sit = n;
                 else if (n.EndsWith("Interact")) interact = n;
                 s.wrapMode = n.EndsWith("Interact") ? WrapMode.Once : WrapMode.Loop;
             }
@@ -72,7 +73,8 @@ public class DriverBody : MonoBehaviour
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
         }
         lastPos = transform.position;
-        Debug.Log("D2D DRIVER clips idle=" + idle + " walk=" + walk + " jog=" + jog + " drive=" + drive + " head=" + (head != null));
+        Debug.Log("D2D DRIVER clips idle=" + idle + " walk=" + walk + " jog=" + jog + " drive=" + drive
+            + " sit=" + sit + " interact=" + interact + " head=" + (head != null));
     }
 
     void ApplyMaterials()
@@ -132,7 +134,9 @@ public class DriverBody : MonoBehaviour
         if (anim == null || interact == null || pc.IsSeated) return;
         anim.CrossFade(interact, 0.15f);
         current = interact;
-        interactUntil = Time.time + 1.4f;
+        // Let the clip finish instead of cutting it at a guessed 1.4 s; stop it
+        // early only if the player starts walking away.
+        interactUntil = Time.time + Mathf.Max(0.4f, anim[interact].length * 0.92f);
     }
 
     void LateUpdate()
@@ -145,13 +149,29 @@ public class DriverBody : MonoBehaviour
         if (inst > 30f) inst = 0f; // teleports
         planarSpeed = Mathf.Lerp(planarSpeed, inst, 1f - Mathf.Exp(-10f * Time.deltaTime));
 
-        // Locomotion is a speed-driven blend of idle, walk and jog with the two
-        // gait cycles phase-locked (same normalized time), so speeding up or
-        // slowing down never pops between clips or slides the feet.
-        string special = pc.IsSeated ? (drive ?? idle) : (Time.time < interactUntil ? interact : null);
+        // Seated: Sit while the rig is parked, Drive once it rolls. Both clips
+        // keep the hands on the wheel; the crossfade keeps a stop from snapping.
+        string special;
+        if (pc.IsSeated)
+        {
+            bool rolling = planarSpeed > 0.35f;
+            special = rolling ? (drive ?? sit ?? idle) : (sit ?? drive ?? idle);
+        }
+        else
+        {
+            // A real interaction plays through; walking away cancels it so the
+            // feet never slide through the last half of the clip.
+            if (Time.time < interactUntil && planarSpeed > 0.35f) interactUntil = 0f;
+            special = Time.time < interactUntil ? interact : null;
+        }
         if (special != null)
         {
-            if (special != current) { anim.CrossFade(special, current == null ? 0f : 0.25f); current = special; }
+            if (special != current)
+            {
+                float fade = (current == sit || current == drive) ? 0.30f : 0.25f;
+                anim.CrossFade(special, current == null ? 0f : fade);
+                current = special;
+            }
             anim[special].speed = 1f;
         }
         else if (walk != null && jog != null && idle != null)
@@ -187,14 +207,17 @@ public class DriverBody : MonoBehaviour
         // Seated: the drive clip's head sits ~1.24 m above the rig root and
         // ~0.35 m behind the hands; place the rig so the head lands on the
         // camera (player origin = eye point in the seat).
-        if (pc.IsSeated)
-        {
-            model.localPosition = Vector3.Lerp(model.localPosition, new Vector3(0f, -1.36f, 0.27f), 1f - Mathf.Exp(-12f * Time.deltaTime));
-        }
+        // On foot: use GroundContact so the soles follow the same pavement the
+        // player collides with. Flat ground gives zero, so the common case is
+        // unchanged; slab edges and slopes no longer float or sink the feet.
+        Vector3 target;
+        if (pc.IsSeated) target = new Vector3(0f, -1.36f, 0.27f);
         else
         {
-            model.localPosition = Vector3.Lerp(model.localPosition, Vector3.zero, 1f - Mathf.Exp(-12f * Time.deltaTime));
+            float ground = GroundContact.HeightAt(transform.position, transform, null, transform.position.y);
+            target = new Vector3(0f, ground - transform.position.y, 0f);
         }
+        model.localPosition = Vector3.Lerp(model.localPosition, target, 1f - Mathf.Exp(-12f * Time.deltaTime));
     }
 
     static Transform FindDeep(Transform t, string n)

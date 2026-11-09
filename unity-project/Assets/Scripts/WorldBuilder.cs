@@ -464,12 +464,13 @@ public static class WorldBuilder
 
     static void ContainerStack(Transform parent, Vector3 pos, int levels)
     {
-        var s = new GameObject("ContainerStack").transform; s.SetParent(parent, false); s.position = pos;
+        var s = new GameObject("ContainerStack").transform; s.SetParent(parent, false);
+        s.position = new Vector3(pos.x, SurfaceY(pos), pos.z);
         for (int i = 0; i < levels; i++)
         {
             var mat = (i % 2 == 0) ? blue : offWhite;
-            MeshFactory.Box("Container", new Vector3(2.5f, 2.6f, 11.8f), new Vector3(0, 1.35f + i * 2.65f, 0), mat, s, false);
-            MeshFactory.Box("ContainerTrim", new Vector3(2.56f, 0.12f, 11.86f), new Vector3(0, 2.65f + i * 2.65f, 0), navy, s, false);
+            MeshFactory.Box("Container", new Vector3(2.5f, 2.6f, 11.8f), new Vector3(0, 1.30f + i * 2.65f, 0), mat, s, false);
+            MeshFactory.Box("ContainerTrim", new Vector3(2.56f, 0.12f, 11.86f), new Vector3(0, 2.60f + i * 2.65f, 0), navy, s, false);
         }
     }
 
@@ -477,8 +478,34 @@ public static class WorldBuilder
     static readonly string[] carModels = { "Car_Camry", "Car_Tahoe", "Car_Silverado", "Car_Fusion" };
     static int carCount;
 
+    // Top of the visible paving at a world point, kept in step with BuildGround:
+    // dirt is the base, then the travel-center lot, fuel island, sidewalk, road,
+    // Amazon yard, yard drive and dock apron. Used to plant props without
+    // relying on physics colliders that may not have synced yet during build.
+    static float SurfaceY(Vector3 p)
+    {
+        float y = -0.02f;
+        if (p.x > -54f && p.x < 42f && p.z > -52f && p.z < 34f) y = 0.085f;
+        if (p.x > 5f && p.x < 35f && p.z > -8f && p.z < 18f) y = Mathf.Max(y, 0.105f);
+        if (p.x > -29.75f && p.x < -6.25f && p.z > 0.1f && p.z < 3.1f) y = Mathf.Max(y, 0.135f);
+        if (p.x > -10.5f && p.x < 10.5f && p.z > 12.5f && p.z < 217.5f) y = Mathf.Max(y, 0.055f);
+        if (p.x > -7.5f && p.x < 7.5f && p.z > 12.5f && p.z < 217.5f) y = Mathf.Max(y, 0.08f);
+        if (p.x > -104f && p.x < 154f && p.z > 216f && p.z < 376f) y = Mathf.Max(y, 0.12f);
+        if (p.x > -1.5f && p.x < 17.5f && p.z > 216.5f && p.z < 317.5f) y = Mathf.Max(y, 0.1705f);
+        if (p.x > -104f && p.x < 154f && p.z > 305f && p.z < 329f) y = Mathf.Max(y, 0.16f);
+        if (p.x > -104f && p.x < 154f && p.z > 217.875f && p.z < 218.125f) y = Mathf.Max(y, 0.18f);
+        return y;
+    }
+
+    static Vector3 OnGround(float x, float z)
+    {
+        Vector3 p = new Vector3(x, 0f, z);
+        p.y = SurfaceY(p);
+        return p;
+    }
+
     // Top of the paving under a parked vehicle: the yard slab or the travel-center apron.
-    static float PavingY(Vector3 p) { return p.z > 215f ? 0.12f : 0.10f; }
+    static float PavingY(Vector3 p) { return SurfaceY(p); }
 
     static void Car(Transform parent, Vector3 pos, float yaw, Color color)
     {
@@ -570,7 +597,10 @@ public static class WorldBuilder
 
         // Customer parking in front of the store, with painted stalls.
         for (int i = 0; i < 6; i++)
-            MeshFactory.Box("ParkingLine", new Vector3(0.10f, 0.02f, 5.0f), new Vector3(-42 + i * 3.0f, 0.11f, 9.5f), roadLine, g, false);
+        {
+            Vector3 p = OnGround(-42 + i * 3.0f, 9.5f);
+            MeshFactory.Box("ParkingLine", new Vector3(0.10f, 0.02f, 5.0f), new Vector3(p.x, p.y + 0.01f, p.z), roadLine, g, false);
+        }
         Car(g, new Vector3(-40.5f, 0, 10.2f), 2f, new Color(0.20f, 0.24f, 0.30f));
         Car(g, new Vector3(-34.5f, 0, 10.2f), 358f, new Color(0.55f, 0.12f, 0.08f));
         Car(g, new Vector3(-28.5f, 0, 10.2f), 1f, new Color(0.68f, 0.69f, 0.66f));
@@ -582,8 +612,9 @@ public static class WorldBuilder
         // curb along the store front
         MeshFactory.Box("StoreCurb", new Vector3(23.5f, 0.16f, 0.22f), new Vector3(-18, 0.08f, 3.2f), concreteDark, g, false);
         // bins and a bench
-        MeshFactory.Box("Bin", new Vector3(0.7f, 1.0f, 0.7f), new Vector3(-6.2f, 0.5f, 0.9f), dark, g, true);
-        MeshFactory.Box("BinLid", new Vector3(0.8f, 0.08f, 0.8f), new Vector3(-6.2f, 1.03f, 0.9f), metal, g, false);
+        float binY = SurfaceY(new Vector3(-6.2f, 0f, 0.9f));
+        MeshFactory.Box("Bin", new Vector3(0.7f, 1.0f, 0.7f), new Vector3(-6.2f, binY + 0.5f, 0.9f), dark, g, true);
+        MeshFactory.Box("BinLid", new Vector3(0.8f, 0.08f, 0.8f), new Vector3(-6.2f, binY + 1.04f, 0.9f), metal, g, false);
     }
 
     static void BuildRoad(Transform root)
@@ -1115,8 +1146,9 @@ public static class WorldBuilder
         SignQuad("OfficeLogo", "amazon_logo_navy", 7.4f, 2.9f, new Vector3(-70f, 5.55f, 329.38f), 0f, g);
         var dfw = MeshFactory.Text3D("DFW9", "DFW9  ·  RELAY", new Vector3(-70, 3.85f, 329.29f), 0.48f, new Color(0.92f, 0.52f, 0.12f), g);
         MeshFactory.FaceBack(dfw);
+        float officeStepY = SurfaceY(new Vector3(-70f, 0f, 328.9f));
         for (int i = 0; i < 3; i++)
-            MeshFactory.Box("OfficeStep", new Vector3(9, 0.18f, 0.8f), new Vector3(-70, 0.09f + i * 0.16f, 328.9f - i * 0.65f), concreteDark, g, false);
+            MeshFactory.Box("OfficeStep", new Vector3(9, 0.18f, 0.8f), new Vector3(-70, officeStepY + 0.09f + i * 0.16f, 328.9f - i * 0.65f), concreteDark, g, false);
 
         // ---- dock doors
         MeshFactory.Box("DockCanopy", new Vector3(196, 0.5f, 10.5f), new Vector3(25, 9.1f, 324.2f), whitePaint, g, false);
@@ -1142,7 +1174,7 @@ public static class WorldBuilder
             MeshFactory.Box("DockSealTop", new Vector3(6.0f, 0.55f, 0.55f), new Vector3(x, 6.25f, 329.05f), dark, g, false);
             MeshFactory.Box("DockSealL", new Vector3(0.5f, 5.9f, 0.55f), new Vector3(x - 2.9f, 3.35f, 329.05f), dark, g, false);
             MeshFactory.Box("DockSealR", new Vector3(0.5f, 5.9f, 0.55f), new Vector3(x + 2.9f, 3.35f, 329.05f), dark, g, false);
-            MeshFactory.Box("DockLeveler", new Vector3(4.8f, 0.06f, 2.2f), new Vector3(x, 0.16f, 328.0f), metal, g, false);
+            MeshFactory.Box("DockLeveler", new Vector3(4.8f, 0.06f, 2.2f), new Vector3(x, SurfaceY(new Vector3(x, 0f, 328.0f)) + 0.03f, 328.0f), metal, g, false);
         }
 
         // wall packs along the facade
@@ -1184,7 +1216,7 @@ public static class WorldBuilder
             if (t != null && (t.name == "SealTag" || t.name == "SealNumber"))
                 Object.Destroy(t.gameObject);
         }
-        AddContactShadow(croot, new Vector3(0f, 0.19f, 0f), new Vector2(3.5f, 19.6f));
+        AddContactShadow(croot, new Vector3(0f, SurfaceY(croot.position) - croot.position.y + 0.015f, 0f), new Vector2(3.5f, 19.6f));
         var ccol = croot.gameObject.AddComponent<BoxCollider>(); ccol.center = new Vector3(0, 2.15f, 0f); ccol.size = new Vector3(3.0f, 4.3f, 18.3f);
         refs.container = croot;
         refs.targetTrailer = croot;
@@ -1250,12 +1282,14 @@ public static class WorldBuilder
         for (int s = -1; s <= 1; s += 2)
         {
             var lead = MeshFactory.Box("HookLeadIn", new Vector3(0.16f, 0.02f, 9.0f), Vector3.zero, yardYellow, g, false);
-            lead.transform.position = croot.TransformPoint(new Vector3(s * 1.62f, 0f, rig.noseLocalZ - 5.0f)) + Vector3.up * 0.178f;
+            Vector3 lp = croot.TransformPoint(new Vector3(s * 1.62f, 0f, rig.noseLocalZ - 5.0f));
+            lp.y = SurfaceY(lp) + 0.012f;
+            lead.transform.position = lp;
             lead.transform.rotation = croot.rotation;
         }
 
         // A-14 yard sign, right beside the staged trailer's left rear corner
-        var pylon = new GameObject("A14Pylon").transform; pylon.SetParent(g, false); pylon.position = new Vector3(35.0f, 0, 287.0f);
+        var pylon = new GameObject("A14Pylon").transform; pylon.SetParent(g, false); pylon.position = OnGround(35.0f, 287.0f);
         MeshFactory.Box("PostL", new Vector3(0.14f, 3.2f, 0.14f), new Vector3(-1.15f, 1.60f, 0), metal, pylon, false);
         MeshFactory.Box("PostR", new Vector3(0.14f, 3.2f, 0.14f), new Vector3(1.15f, 1.60f, 0), metal, pylon, false);
         MeshFactory.Box("Board", new Vector3(2.65f, 1.45f, 0.12f), new Vector3(0, 2.80f, 0), navy, pylon, false);
@@ -1280,6 +1314,7 @@ public static class WorldBuilder
             sm.transform.localRotation = Quaternion.identity;
             sm.transform.localScale = Vector3.one;
             ApplyContainerMaterials(sm);
+            AddContactShadow(st, new Vector3(0f, SurfaceY(st.position) - st.position.y + 0.015f, 0f), new Vector2(3.0f, 16.8f));
             var sc = st.gameObject.AddComponent<BoxCollider>(); sc.center = new Vector3(0, 2.15f, 0); sc.size = new Vector3(3.0f, 4.3f, 18.3f);
             SignQuad("TrailerLogoW", "amazon_logo_navy", 5.4f, 2.05f, new Vector3(-1.60f, 3.25f, 0f), 90f, st);
             SignQuad("TrailerLogoE", "amazon_logo_navy", 5.4f, 2.05f, new Vector3(1.60f, 3.25f, 0f), -90f, st);
@@ -1298,6 +1333,7 @@ public static class WorldBuilder
             bm.transform.localRotation = Quaternion.identity;
             bm.transform.localScale = Vector3.one;
             ApplyContainerMaterials(bm);
+            AddContactShadow(bg, new Vector3(0f, SurfaceY(bg.position) - bg.position.y + 0.015f, 0f), new Vector2(3.0f, 16.8f));
             var bc = bg.gameObject.AddComponent<BoxCollider>(); bc.center = new Vector3(0, 2.15f, 0); bc.size = new Vector3(3.0f, 4.3f, 18.3f);
             SignQuad("TrailerLogoW", "amazon_logo_navy", 5.0f, 1.9f, new Vector3(-1.55f, 3.2f, 0f), 90f, bg);
         }
@@ -1306,17 +1342,23 @@ public static class WorldBuilder
         for (int i = 0; i < 7; i++)
         {
             float x = -24 + i * 18f;
-            MeshFactory.Box("StallLine", new Vector3(0.18f, 0.02f, 25f), new Vector3(x, 0.178f, 284), roadLine, g, false);
+            float ly = SurfaceY(new Vector3(x, 0f, 284f)) + 0.012f;
+            MeshFactory.Box("StallLine", new Vector3(0.18f, 0.02f, 25f), new Vector3(x, ly, 284), roadLine, g, false);
         }
         for (int i = 0; i < 9; i++)
-            MeshFactory.Box("LaneMark", new Vector3(0.2f, 0.02f, 5f), new Vector3(8f, 0.178f, 226 + i * 9f), roadLine, g, false);
+        {
+            float z = 226 + i * 9f;
+            float ly = SurfaceY(new Vector3(8f, 0f, z)) + 0.012f;
+            MeshFactory.Box("LaneMark", new Vector3(0.2f, 0.02f, 5f), new Vector3(8f, ly, z), roadLine, g, false);
+        }
         // directional arrows toward the trailer
         for (int i = 0; i < 3; i++)
         {
             float z = 232 + i * 12f;
-            MeshFactory.Box("ArrowShaft", new Vector3(0.4f, 0.02f, 3.4f), new Vector3(13.2f, 0.18f, z), roadLine, g, false);
-            MeshFactory.Box("ArrowHeadL", new Vector3(0.35f, 0.02f, 1.6f), new Vector3(12.7f, 0.18f, z + 1.3f), roadLine, g, false).transform.rotation = Quaternion.Euler(0, -38, 0);
-            MeshFactory.Box("ArrowHeadR", new Vector3(0.35f, 0.02f, 1.6f), new Vector3(13.7f, 0.18f, z + 1.3f), roadLine, g, false).transform.rotation = Quaternion.Euler(0, 38, 0);
+            float ay = SurfaceY(new Vector3(13.2f, 0f, z)) + 0.012f;
+            MeshFactory.Box("ArrowShaft", new Vector3(0.4f, 0.02f, 3.4f), new Vector3(13.2f, ay, z), roadLine, g, false);
+            MeshFactory.Box("ArrowHeadL", new Vector3(0.35f, 0.02f, 1.6f), new Vector3(12.7f, ay, z + 1.3f), roadLine, g, false).transform.rotation = Quaternion.Euler(0, -38, 0);
+            MeshFactory.Box("ArrowHeadR", new Vector3(0.35f, 0.02f, 1.6f), new Vector3(13.7f, ay, z + 1.3f), roadLine, g, false).transform.rotation = Quaternion.Euler(0, 38, 0);
         }
 
         // pallets and a couple of chocks staged by A-14
@@ -1324,17 +1366,18 @@ public static class WorldBuilder
         {
             float px = 33.0f + (i % 2) * 1.4f;
             float pz = 275.5f + (i / 2) * 1.3f;
+            float baseY = SurfaceY(new Vector3(px, 0f, pz));
             for (int b = 0; b < 4; b++)
-                MeshFactory.Box("PalletBoard", new Vector3(1.15f, 0.045f, 0.20f), new Vector3(px, 0.30f + b * 0.13f, pz - 0.35f + b * 0.16f), wood, g, true);
-            MeshFactory.Box("PalletBlock", new Vector3(0.15f, 0.10f, 0.9f), new Vector3(px - 0.42f, 0.24f, pz), wood, g, false);
-            MeshFactory.Box("PalletBlock", new Vector3(0.15f, 0.10f, 0.9f), new Vector3(px + 0.42f, 0.24f, pz), wood, g, false);
+                MeshFactory.Box("PalletBoard", new Vector3(1.15f, 0.045f, 0.20f), new Vector3(px, baseY + 0.1225f + b * 0.13f, pz - 0.35f + b * 0.16f), wood, g, true);
+            MeshFactory.Box("PalletBlock", new Vector3(0.15f, 0.10f, 0.9f), new Vector3(px - 0.42f, baseY + 0.05f, pz), wood, g, false);
+            MeshFactory.Box("PalletBlock", new Vector3(0.15f, 0.10f, 0.9f), new Vector3(px + 0.42f, baseY + 0.05f, pz), wood, g, false);
         }
         // wheel chocks behind the trailer's rear tires, clear of its path when it pulls out
         if (refs.trailerRig != null)
             for (int s = -1; s <= 1; s += 2)
             {
                 Vector3 cp = refs.trailerRig.transform.TransformPoint(new Vector3(s * 1.0f, 0f, refs.trailerRig.axleLocalZ + 1.35f));
-                MeshFactory.Box("Chock", new Vector3(0.4f, 0.22f, 0.26f), new Vector3(cp.x, 0.28f, cp.z), orange, g, true);
+                MeshFactory.Box("Chock", new Vector3(0.4f, 0.22f, 0.26f), new Vector3(cp.x, SurfaceY(cp) + 0.11f, cp.z), orange, g, true);
             }
     }
 
@@ -1385,8 +1428,9 @@ public static class WorldBuilder
         var g = new GameObject("Gate").transform; g.SetParent(root, false);
 
         // ---- gantry over the entrance
-        MeshFactory.Box("GantryPostL", new Vector3(0.65f, 8.3f, 0.65f), new Vector3(-9.6f, 4.15f, 205), metal, g, true);
-        MeshFactory.Box("GantryPostR", new Vector3(0.65f, 8.3f, 0.65f), new Vector3(9.6f, 4.15f, 205), metal, g, true);
+        float gantryY = SurfaceY(new Vector3(-9.6f, 0f, 205f));
+        MeshFactory.Box("GantryPostL", new Vector3(0.65f, 8.3f, 0.65f), new Vector3(-9.6f, gantryY + 4.15f, 205), metal, g, true);
+        MeshFactory.Box("GantryPostR", new Vector3(0.65f, 8.3f, 0.65f), new Vector3(9.6f, gantryY + 4.15f, 205), metal, g, true);
         MeshFactory.Box("GantryBeam", new Vector3(20.2f, 0.6f, 0.5f), new Vector3(0, 7.8f, 205), metal, g, false);
         MeshFactory.Box("GantryBeam2", new Vector3(20.2f, 0.25f, 0.35f), new Vector3(0, 7.35f, 205), dark, g, false);
         MeshFactory.Box("GateSignBacker", new Vector3(12.6f, 5.0f, 0.4f), new Vector3(0, 9.85f, 205), navy, g, false);
@@ -1423,21 +1467,25 @@ public static class WorldBuilder
         bl.color = new Color(1f, 0.78f, 0.50f); bl.shadows = LightShadows.None;
 
         // Guard on the apron, facing the driver's window.
-        GuardFigure(g, new Vector3(6.7f, 0, 200.0f), 176f);
+        GuardFigure(g, OnGround(6.7f, 200.0f), 176f);
 
         // ---- barrier arm
         var pivot = new GameObject("BarrierPivot").transform; pivot.SetParent(g, false); pivot.position = new Vector3(8.55f, 1.3f, 207.2f);
         MeshFactory.Box("BarrierArm", new Vector3(16.8f, 0.18f, 0.18f), new Vector3(-8.4f, 0, 0), whitePaint, pivot, false);
         for (int i = 0; i < 8; i++)
             MeshFactory.Box("Stripe", new Vector3(0.9f, 0.22f, 0.22f), new Vector3(-15.4f + i * 2.05f, 0, 0), orange, pivot, false);
-        MeshFactory.Box("BarrierSupport", new Vector3(0.55f, 1.55f, 0.55f), new Vector3(8.55f, 0.78f, 207.2f), metal, g, false);
-        MeshFactory.Box("BarrierLight", new Vector3(0.28f, 0.28f, 0.28f), new Vector3(8.55f, 1.72f, 207.2f), orangeGlow, g, false);
+        float barrierY = SurfaceY(new Vector3(8.55f, 0f, 207.2f));
+        MeshFactory.Box("BarrierSupport", new Vector3(0.55f, 1.55f, 0.55f), new Vector3(8.55f, barrierY + 0.775f, 207.2f), metal, g, false);
+        MeshFactory.Box("BarrierLight", new Vector3(0.28f, 0.28f, 0.28f), new Vector3(8.55f, barrierY + 1.69f, 207.2f), orangeGlow, g, false);
         var gc = g.gameObject.AddComponent<GateController>(); gc.arm = pivot; refs.gate = gc;
 
         // ---- stop line
-        MeshFactory.Box("StopLine", new Vector3(14.2f, 0.03f, 0.55f), new Vector3(0, 0.12f, 196.5f), roadLine, g, false);
+        MeshFactory.Box("StopLine", new Vector3(14.2f, 0.03f, 0.55f), new Vector3(0, SurfaceY(new Vector3(0f, 0f, 196.5f)) + 0.015f, 196.5f), roadLine, g, false);
         for (int i = 0; i < 8; i++)
-            MeshFactory.Box("Crosswalk", new Vector3(4.5f, 0.03f, 0.45f), new Vector3(-7 + i * 2f, 0.12f, 199.2f), roadLine, g, false);
+        {
+            float cx = -7 + i * 2f;
+            MeshFactory.Box("Crosswalk", new Vector3(4.5f, 0.03f, 0.45f), new Vector3(cx, SurfaceY(new Vector3(cx, 0f, 199.2f)) + 0.015f, 199.2f), roadLine, g, false);
+        }
 
         // ---- fence on both sides of the gate
         FenceLine(g, new Vector3(-110, 0, 206.5f), new Vector3(-9.6f, 0, 206.5f), 2.9f);
@@ -1526,12 +1574,15 @@ public static class WorldBuilder
         for (int i = 0; i < 12; i++)
             Cone(g, new Vector3(43 + (i % 6) * 7, 0, 256 + (i / 6) * 6));
         // bins and bollards at the office
-        MeshFactory.Box("Dumpster", new Vector3(2.2f, 1.5f, 1.4f), new Vector3(-83, 0.85f, 325), green, g, true);
-        MeshFactory.Box("DumpsterLid", new Vector3(2.3f, 0.16f, 1.5f), new Vector3(-83, 1.65f, 325), dark, g, false);
+        float dumpY = SurfaceY(new Vector3(-83f, 0f, 325f));
+        MeshFactory.Box("Dumpster", new Vector3(2.2f, 1.5f, 1.4f), new Vector3(-83, dumpY + 0.75f, 325), green, g, true);
+        MeshFactory.Box("DumpsterLid", new Vector3(2.3f, 0.16f, 1.5f), new Vector3(-83, dumpY + 1.58f, 325), dark, g, false);
+        float bollardY = SurfaceY(new Vector3(-58f, 0f, 326f));
         for (int i = 0; i < 4; i++)
-            MeshFactory.Cyl("Bollard", 0.16f, 1.2f, new Vector3(-58 + i * 2.4f, 0.6f, 326), yellowPaint, g, true);
+            MeshFactory.Cyl("Bollard", 0.16f, 1.2f, new Vector3(-58 + i * 2.4f, bollardY + 0.6f, 326), yellowPaint, g, true);
         // parked pickup in the staff lot
-        var car = new GameObject("Pickup").transform; car.SetParent(g, false); car.position = new Vector3(-92, 0, 238); car.rotation = Quaternion.Euler(0, 12, 0);
+        var car = new GameObject("Pickup").transform; car.SetParent(g, false);
+        car.position = new Vector3(-92f, SurfaceY(new Vector3(-92f, 0f, 238f)), 238f); car.rotation = Quaternion.Euler(0, 12, 0);
         MeshFactory.Box("CarBody", new Vector3(1.9f, 0.8f, 4.8f), new Vector3(0, 0.75f, 0), dark, car, true);
         MeshFactory.Box("CarCab", new Vector3(1.7f, 0.75f, 2.0f), new Vector3(0, 1.45f, -0.3f), glass, car, false);
         for (int i = 0; i < 4; i++)
@@ -1553,34 +1604,36 @@ public static class WorldBuilder
         // planted beds along both store side walls
         for (int i = 0; i < 6; i++)
         {
-            PropLibrary.Spawn(shrubs[i % 4], new Vector3(-5.9f, 0f, -1.5f - i * 2.3f), i * 61f, 0.75f + (i % 3) * 0.1f, g);
-            PropLibrary.Spawn(shrubs[(i + 1) % 4], new Vector3(-30.2f, 0f, -1.5f - i * 2.3f), i * 47f, 0.75f + (i % 2) * 0.12f, g);
+            PropLibrary.Spawn(shrubs[i % 4], OnGround(-5.9f, -1.5f - i * 2.3f), i * 61f, 0.75f + (i % 3) * 0.1f, g);
+            PropLibrary.Spawn(shrubs[(i + 1) % 4], OnGround(-30.2f, -1.5f - i * 2.3f), i * 47f, 0.75f + (i % 2) * 0.12f, g);
         }
-        PropLibrary.Spawn("Hydrant", new Vector3(-4.6f, 0f, 1.2f), 20f, 1f, g, true);
-        PropLibrary.Spawn("TrashCan", new Vector3(-10.6f, 0f, 1.0f), 15f, 1f, g, true);
-        PropLibrary.Spawn("TrashCan", new Vector3(-25.4f, 0f, 1.0f), 200f, 1f, g, true);
-        PropLibrary.Spawn("UtilityBox", new Vector3(-29.9f, 0f, -15.6f), 180f, 1f, g, true);
-        PropLibrary.Spawn("UtilityBox", new Vector3(-29.2f, 0f, -15.6f), 180f, 1f, g, true);
+        PropLibrary.Spawn("Hydrant", OnGround(-4.6f, 1.2f), 20f, 1f, g, true);
+        PropLibrary.Spawn("TrashCan", OnGround(-10.6f, 1.0f), 15f, 1f, g, true);
+        PropLibrary.Spawn("TrashCan", OnGround(-25.4f, 1.0f), 200f, 1f, g, true);
+        PropLibrary.Spawn("UtilityBox", OnGround(-29.9f, -15.6f), 180f, 1f, g, true);
+        PropLibrary.Spawn("UtilityBox", OnGround(-29.2f, -15.6f), 180f, 1f, g, true);
+        Vector3 tyre = OnGround(-31.2f, -12.5f);
         for (int i = 0; i < 4; i++)
-            PropLibrary.Spawn("Tyre", new Vector3(-31.2f, 0.16f * i + 0.08f, -12.5f), i * 40f, 1.6f, g).transform.rotation = Quaternion.Euler(90f, i * 37f, 0f);
+            PropLibrary.Spawn("Tyre", new Vector3(tyre.x, tyre.y + 0.16f * i + 0.08f, tyre.z), i * 40f, 1.6f, g).transform.rotation = Quaternion.Euler(90f, i * 37f, 0f);
         // jersey barriers closing off the west edge of the lot
         for (int i = 0; i < 8; i++)
-            PropLibrary.Spawn("JerseyBarrier", new Vector3(-36.5f, 0f, 4f + i * 3.3f), 90f + (i % 2) * 2f, 2.0f, g, true);
+            PropLibrary.Spawn("JerseyBarrier", OnGround(-36.5f, 4f + i * 3.3f), 90f + (i % 2) * 2f, 2.0f, g, true);
         // yard: boxes by the dumpster, a covered car in the staff lot
+        Vector3 box = OnGround(-81.2f, 326.4f);
         for (int i = 0; i < 5; i++)
-            PropLibrary.Spawn("CardboardBox", new Vector3(-81.2f + (i % 3) * 0.55f, (i / 3) * 0.34f, 326.4f), i * 23f, 1.4f, g);
-        PropLibrary.Spawn("CoveredCar", new Vector3(-96.5f, 0f, 245f), 8f, 1.05f, g, true);
+            PropLibrary.Spawn("CardboardBox", new Vector3(box.x + (i % 3) * 0.55f, box.y + (i / 3) * 0.34f, box.z), i * 23f, 1.4f, g);
+        PropLibrary.Spawn("CoveredCar", OnGround(-96.5f, 245f), 8f, 1.05f, g, true);
         // scrub along the yard fence and the road verges
         for (int i = 0; i < 18; i++)
         {
             float z = 212f + i * 9.5f;
-            PropLibrary.Spawn(shrubs[i % 4], new Vector3(-107f + (i % 3) * 0.8f, 0f, z), i * 53f, 0.9f + (i % 4) * 0.15f, g);
-            PropLibrary.Spawn(shrubs[(i + 2) % 4], new Vector3(158f - (i % 3) * 0.8f, 0f, z + 4f), i * 71f, 0.9f + (i % 3) * 0.18f, g);
+            PropLibrary.Spawn(shrubs[i % 4], OnGround(-107f + (i % 3) * 0.8f, z), i * 53f, 0.9f + (i % 4) * 0.15f, g);
+            PropLibrary.Spawn(shrubs[(i + 2) % 4], OnGround(158f - (i % 3) * 0.8f, z + 4f), i * 71f, 0.9f + (i % 3) * 0.18f, g);
         }
         for (int i = 0; i < 24; i++)
         {
             float side = i % 2 == 0 ? -1f : 1f;
-            PropLibrary.Spawn(shrubs[i % 4], new Vector3(side * (12.5f + (i % 5) * 1.7f), 0f, 34f + i * 6.3f), i * 29f, 0.8f + (i % 3) * 0.2f, g);
+            PropLibrary.Spawn(shrubs[i % 4], OnGround(side * (12.5f + (i % 5) * 1.7f), 34f + i * 6.3f), i * 29f, 0.8f + (i % 3) * 0.2f, g);
         }
     }
 
@@ -1608,6 +1661,7 @@ public static class WorldBuilder
         // hard blue ellipses once the lot was no longer hidden under the dirt boxes)
         void Puddle(Vector3 p, float w, float l, float yaw)
         {
+            p.y = SurfaceY(p) + 0.003f;
             if (T("wet_patch") != null)
             {
                 Decal(g, "WetPatch", "wet_patch", w * 1.35f, l * 1.35f, p + Vector3.up * 0.014f, yaw, new Color(1f, 1f, 1f, 0.9f));
@@ -1649,15 +1703,18 @@ public static class WorldBuilder
         MeshFactory.FaceBack(hours);
 
         // ice chest and propane cage along the store front
-        MeshFactory.Box("IceChest", new Vector3(1.6f, 1.25f, 0.8f), new Vector3(-26.5f, 0.71f, 1.0f), whitePaint, g, true);
-        var ice = MeshFactory.Text3D("IceWord", "ICE", new Vector3(-26.5f, 0.95f, 1.41f), 0.16f, new Color(0.10f, 0.32f, 0.62f), g);
+        float iceY = SurfaceY(new Vector3(-26.5f, 0f, 1.0f));
+        MeshFactory.Box("IceChest", new Vector3(1.6f, 1.25f, 0.8f), new Vector3(-26.5f, iceY + 0.625f, 1.0f), whitePaint, g, true);
+        var ice = MeshFactory.Text3D("IceWord", "ICE", new Vector3(-26.5f, iceY + 0.865f, 1.41f), 0.16f, new Color(0.10f, 0.32f, 0.62f), g);
         MeshFactory.FaceBack(ice);
-        MeshFactory.Box("PropaneCage", new Vector3(1.4f, 1.6f, 0.75f), new Vector3(-29.0f, 0.88f, 1.0f), metal, g, true);
+        float propaneY = SurfaceY(new Vector3(-29.0f, 0f, 1.0f));
+        MeshFactory.Box("PropaneCage", new Vector3(1.4f, 1.6f, 0.75f), new Vector3(-29.0f, propaneY + 0.8f, 1.0f), metal, g, true);
         for (int i = 0; i < 4; i++)
-            MeshFactory.Cyl("PropaneTank", 0.15f, 0.48f, new Vector3(-29.45f + i * 0.30f, 0.40f, 1.0f), whitePaint, g, false);
-        MeshFactory.Box("Bench", new Vector3(1.8f, 0.08f, 0.45f), new Vector3(-9.0f, 0.55f, 1.2f), wood, g, true);
+            MeshFactory.Cyl("PropaneTank", 0.15f, 0.48f, new Vector3(-29.45f + i * 0.30f, propaneY + 0.24f, 1.0f), whitePaint, g, false);
+        float benchY = SurfaceY(new Vector3(-9.0f, 0f, 1.2f));
+        MeshFactory.Box("Bench", new Vector3(1.8f, 0.08f, 0.45f), new Vector3(-9.0f, benchY + 0.46f, 1.2f), wood, g, true);
         for (int s = -1; s <= 1; s += 2)
-            MeshFactory.Box("BenchLeg", new Vector3(0.06f, 0.42f, 0.40f), new Vector3(-9.0f + s * 0.8f, 0.30f, 1.2f), metal, g, false);
+            MeshFactory.Box("BenchLeg", new Vector3(0.06f, 0.42f, 0.40f), new Vector3(-9.0f + s * 0.8f, benchY + 0.21f, 1.2f), metal, g, false);
 
         // ---- pump islands: pump numbers, squeegee buckets, trash cans, idling sign
         for (int i = 0; i < 2; i++)
@@ -1670,21 +1727,22 @@ public static class WorldBuilder
             var diesel = MeshFactory.Text3D("PumpDiesel", "DIESEL  #2", new Vector3(x, 1.20f, 3.43f), 0.07f, new Color(0.08f, 0.45f, 0.18f), g);
             MeshFactory.FaceBack(diesel);
             if (realPump) Object.Destroy(diesel);
-            MeshFactory.Cyl("SqueegeeBucket", 0.17f, 0.42f, new Vector3(x + 1.7f, 0.43f, 3.55f), green, g, false);
-            var stick = MeshFactory.Cyl("SqueegeeStick", 0.014f, 0.9f, new Vector3(x + 1.72f, 0.75f, 3.55f), metal, g, false);
+            float pumpY = SurfaceY(new Vector3(x, 0f, 3.5f));
+            MeshFactory.Cyl("SqueegeeBucket", 0.17f, 0.42f, new Vector3(x + 1.7f, pumpY + 0.21f, 3.55f), green, g, false);
+            var stick = MeshFactory.Cyl("SqueegeeStick", 0.014f, 0.9f, new Vector3(x + 1.72f, pumpY + 0.53f, 3.55f), metal, g, false);
             stick.transform.rotation = Quaternion.Euler(0f, 0f, 12f);
-            MeshFactory.Cyl("PumpTrash", 0.26f, 0.95f, new Vector3(x - 1.9f, 0.70f, 3.6f), dark, g, true);
-            MeshFactory.Cyl("PumpTrashLid", 0.29f, 0.06f, new Vector3(x - 1.9f, 1.19f, 3.6f), metal, g, false);
+            MeshFactory.Cyl("PumpTrash", 0.26f, 0.95f, new Vector3(x - 1.9f, pumpY + 0.475f, 3.6f), dark, g, true);
+            MeshFactory.Cyl("PumpTrashLid", 0.29f, 0.06f, new Vector3(x - 1.9f, pumpY + 0.965f, 3.6f), metal, g, false);
         }
-        var idlePost = new GameObject("NoIdlingSign").transform; idlePost.SetParent(g, false); idlePost.position = new Vector3(12.6f, 0, -0.4f);
+        var idlePost = new GameObject("NoIdlingSign").transform; idlePost.SetParent(g, false); idlePost.position = OnGround(12.6f, -0.4f);
         MeshFactory.Box("SignPost", new Vector3(0.07f, 2.3f, 0.07f), new Vector3(0, 1.15f, 0), metal, idlePost, false);
         MeshFactory.Box("SignPlate", new Vector3(0.62f, 0.78f, 0.03f), new Vector3(0, 2.0f, 0), whitePaint, idlePost, false);
         var idle = MeshFactory.Text3D("SignText", "NO IDLING\nOVER\n5 MIN", new Vector3(0f, 2.0f, 0.02f), 0.075f, new Color(0.62f, 0.06f, 0.04f), idlePost);
         MeshFactory.FaceBack(idle);
 
         // tyre streaks out of the pump lane toward the road
-        Decal(g, "TireMarksPumps", "tire_marks", 3.0f, 22f, new Vector3(22f, 0.226f, 6f), 0f, new Color(0.58f, 0.54f, 0.49f, 0.32f));
-        Decal(g, "TireMarksLot", "tire_marks", 3.0f, 18f, new Vector3(0f, 0.090f, 22f), 8f, new Color(0.58f, 0.54f, 0.49f, 0.36f));
+        Decal(g, "TireMarksPumps", "tire_marks", 3.0f, 22f, new Vector3(22f, SurfaceY(new Vector3(22f, 0f, 6f)) + 0.014f, 6f), 0f, new Color(0.58f, 0.54f, 0.49f, 0.32f));
+        Decal(g, "TireMarksLot", "tire_marks", 3.0f, 18f, new Vector3(0f, SurfaceY(new Vector3(0f, 0f, 22f)) + 0.014f, 22f), 8f, new Color(0.58f, 0.54f, 0.49f, 0.36f));
 
         // ---- yard: pallets, chocks and dock lights at the doors
         void PalletStack(Vector3 p, int layers, float yaw)
@@ -1767,6 +1825,7 @@ public static class WorldBuilder
     static Material concreteFooting;
     static void LightPole(Transform parent, Vector3 pos, float height)
     {
+        pos.y = SurfaceY(pos);
         var p = new GameObject("LightPole").transform; p.SetParent(parent, false); p.position = pos;
         // Sketchfab Gardco shoebox pole (9 m, origin at the foot; head lands on +X at yaw 180).
         // The cylinder pole with the Poly Haven flood light is the fallback.
@@ -1803,6 +1862,7 @@ public static class WorldBuilder
     {
         // A 28-inch highway cone: square rubber base, tapered PVC body with two
         // reflective collars, slightly worn. Replaces the old stacked cylinders.
+        pos.y = SurfaceY(pos);
         var c = new GameObject("Cone").transform; c.SetParent(parent, false); c.position = pos;
         c.rotation = Quaternion.Euler(0f, (pos.x * 37f + pos.z * 11f) % 90f, 0f);
         if (coneOrange == null)
@@ -1819,6 +1879,7 @@ public static class WorldBuilder
 
     static void Tree(Transform parent, Vector3 pos, float scale)
     {
+        pos.y = SurfaceY(pos);
         if (PropLibrary.SpawnTree(pos, scale, parent) != null) return;
         var t = new GameObject("Tree").transform; t.SetParent(parent, false); t.position = pos; t.localScale = Vector3.one * scale;
         MeshFactory.Cyl("Trunk", 0.20f, 3.9f, new Vector3(0, 1.95f, 0), dark, t, false);
@@ -1835,12 +1896,15 @@ public static class WorldBuilder
         Vector3 dir = b - a;
         float len = dir.magnitude;
         if (len < 0.5f) return;
-        var g = new GameObject("Fence").transform; g.SetParent(parent, false); g.position = a; g.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+        float baseY = SurfaceY(a);
+        var g = new GameObject("Fence").transform; g.SetParent(parent, false); g.position = new Vector3(a.x, baseY, a.z); g.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
         int posts = Mathf.Max(1, Mathf.RoundToInt(len / 6f));
         for (int i = 0; i <= posts; i++)
         {
             float t = i / (float)posts;
-            MeshFactory.Cyl("FencePost", 0.055f, height, new Vector3(t * len, height / 2, 0), metal, g, false);
+            // Sample each post so the fence follows road, shoulder and yard without sinking.
+            float py = SurfaceY(g.TransformPoint(new Vector3(t * len, 0f, 0f))) - baseY;
+            MeshFactory.Cyl("FencePost", 0.055f, height, new Vector3(t * len, py + height / 2, 0), metal, g, false);
         }
         for (int i = 0; i < 3; i++)
             MeshFactory.Box("FenceRail", new Vector3(len, 0.035f, 0.035f), new Vector3(len / 2, 0.45f + i * (height - 0.7f) / 2f, 0), metal, g, false);
