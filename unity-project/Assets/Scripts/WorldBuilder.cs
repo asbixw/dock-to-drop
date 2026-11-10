@@ -55,15 +55,15 @@ public static class WorldBuilder
         BuildHorizon(root);
         refs.truck = BuildTruck(flow, root, out refs.truckSeat, out refs.truckExit, out refs.driverDoor);
 
-        // The deadhead is real distance: the yard and gate are built at their
-        // authored local coordinates, then placed at the far end of a highway
-        // whose length is exactly the assigned 32/60 miles. The odometer
-        // integrates metres on this road; nothing scales or compresses it.
+        // The deadhead is real distance: a segmented rural/interstate route
+        // runs from the end of the town street to the gate trigger face, and
+        // the yard is placed at its end. The odometer integrates metres along
+        // the road; nothing scales or compresses it.
         float route = flow.DeadheadAssignedMiles * 1609.344f;
-        var hull = refs.truck.GetComponent<BoxCollider>();
-        float nose = hull != null ? hull.center.z + hull.size.z * 0.5f : 0f;
-        float contactLocal = GateTriggerZ - GateTriggerHalf - nose;
-        float destOffset = route + refs.truck.transform.position.z - contactLocal;
+        float routeEndZ;
+        BuildRoute(root, refs.truck.transform.position.z, route, out routeEndZ);
+        float contactLocal = GateTriggerZ - GateTriggerHalf;
+        float destOffset = routeEndZ - contactLocal;
         refs.routeLength = route;
 
         var dest = new GameObject("Destination").transform;
@@ -87,9 +87,9 @@ public static class WorldBuilder
             rig.SetParkedPose(rig.transform.position, rig.transform.rotation);
         }
 
-        BuildHighway(root, destOffset);
         Debug.Log("D2D ROUTE length=" + route.ToString("F1") + "m (" + flow.DeadheadAssignedMiles
-            + " mi) gateZ=" + (destOffset + 205f).ToString("F1") + " destOffset=" + destOffset.ToString("F1"));
+            + " mi) routeEndZ=" + routeEndZ.ToString("F1") + " gateZ=" + (destOffset + 205f).ToString("F1")
+            + " destOffset=" + destOffset.ToString("F1"));
         BuildLivedInDetails(root, dest);
         BuildRealProps(root, dest);
         BuildReflectionProbes(root);
@@ -344,64 +344,215 @@ public static class WorldBuilder
         Probe(root, "YardReflection", new Vector3(18f, 7f, 260f), new Vector3(250f, 34f, 190f), 128);
     }
 
-    static void BuildHighway(Transform root, float destOffset)
+    // The deadhead is a real, segmented road rather than one 15 m box: a
+    // two-lane rural highway, an on-ramp, an I-80 style interstate with a
+    // median, then the exit to the yard road. The centreline is a gentle
+    // curve with grades capped at 6%, built from short ribbon segments.
+    // The route ends at the gate trigger face, so the odometer distance from
+    // the truck to the gate is exactly the assigned miles.
+    static void BuildRoute(Transform root, float truckZ, float assignedRoute, out float endZ)
     {
-        const float start = 217.5f;
-        float end = destOffset + 430f;
-        float len = Mathf.Max(1f, end - start);
-        var g = new GameObject("Highway").transform; g.SetParent(root, false);
-        var hwAsphalt = MeshFactory.TexMat("HighwayAsphalt", asphaltD, asphaltN, new Vector2(4f, len / 4f), 0.06f);
-        Tint(hwAsphalt, new Color(1f, 1f, 1f));
-        Bump(hwAsphalt, 0.34f);
-        var hwShoulder = MeshFactory.TexMat("HighwayShoulder", concD, concN, new Vector2(2f, len / 3f), 0.10f);
-        var hwDirt = MeshFactory.Mat("HighwayDirt", new Color(0.56f, 0.50f, 0.40f), 0f, 0.06f);
-        var centre = MeshFactory.Mat("HighwayCentre", new Color(0.82f, 0.66f, 0.22f), 0f, 0.34f);
+        const float startZ = 217.5f;
+        const float startY = 0.08f;
+        float initialLeg = Mathf.Max(0f, startZ - truckZ);
+        float L = Mathf.Max(100f, assignedRoute - initialLeg);
+        float Lgeo = L + 40f;             // carry the road a little into the yard
+        int n = Mathf.Max(2, Mathf.CeilToInt(Lgeo / 25f) + 1);
 
-        MeshFactory.Box("HighwayGround", new Vector3(640f, 0.2f, len + 900f), new Vector3(0f, -0.14f, start + len / 2f), hwDirt, g, false);
-        MeshFactory.Box("HighwaySurface", new Vector3(15f, 0.08f, len), new Vector3(0f, 0.04f, start + len / 2f), hwAsphalt, g, true);
-        MeshFactory.Box("HighwayShoulderL", new Vector3(3f, 0.05f, len), new Vector3(-9f, 0.03f, start + len / 2f), hwShoulder, g, true);
-        MeshFactory.Box("HighwayShoulderR", new Vector3(3f, 0.05f, len), new Vector3(9f, 0.03f, start + len / 2f), hwShoulder, g, true);
-        MeshFactory.Box("HighwayEdgeL", new Vector3(0.16f, 0.02f, len), new Vector3(-6.6f, 0.085f, start + len / 2f), roadLine, g, false);
-        MeshFactory.Box("HighwayEdgeR", new Vector3(0.16f, 0.02f, len), new Vector3(6.6f, 0.085f, start + len / 2f), roadLine, g, false);
-        MeshFactory.Box("HighwayCentreA", new Vector3(0.14f, 0.02f, len), new Vector3(-0.18f, 0.085f, start + len / 2f), centre, g, false);
-        MeshFactory.Box("HighwayCentreB", new Vector3(0.14f, 0.02f, len), new Vector3(0.18f, 0.085f, start + len / 2f), centre, g, false);
-
-        // Delineator posts and mile boards give the eye real motion cues over the
-        // long run. Posts are spaced 1 km apart so a 60-mile road does not add
-        // thousands of draw calls; the continuous edge and centre lines carry
-        // the sense of speed between them.
-        int delineator = 0;
-        for (float z = start + 250f; z < end; z += 1000f)
+        var xs = new List<float>(n);
+        var ys = new List<float>(n);
+        const float A1 = 60f, lam1 = 9000f, A2 = 24f, lam2 = 3200f, phase = 1.3f;
+        const float Y1 = 45f, lamg = 7000f, phaseG = 0.7f;
+        for (int i = 0; i < n; i++)
         {
-            float side = delineator++ % 2 == 0 ? -1f : 1f;
-            MeshFactory.Box("Delineator", new Vector3(0.12f, 1.05f, 0.12f), new Vector3(side * 7.8f, 0.60f, z), whitePaint, g, false);
-            MeshFactory.Box("DelineatorReflector", new Vector3(0.16f, 0.14f, 0.02f), new Vector3(side * 7.8f, 0.95f, z - 0.07f), orangeGlow, g, false);
+            float s = Lgeo * i / (n - 1);
+            float f = Mathf.Min(1f, s / L);
+            float blend = Mathf.SmoothStep(0f, 0.06f, f) * Mathf.SmoothStep(1f, 0.94f, f);
+            xs.Add((A1 * Mathf.Sin(2f * Mathf.PI * s / lam1) + A2 * Mathf.Sin(2f * Mathf.PI * s / lam2 + phase)) * blend);
+            ys.Add(Y1 * Mathf.Sin(2f * Mathf.PI * s / lamg + phaseG) * blend);
         }
-        // Each board shows the miles still to go to the gate trigger face, the
-        // same point the odometer measures to. (The old countdown started one
-        // mile high, so the board a mile out read "2 MI" and one sat at the gate.)
-        float gateFaceZ = destOffset + GateTriggerZ - GateTriggerHalf;
-        // Guide sign, placed two real miles before the gate. It used to stand 126 m
-        // from the start of a 32/60-mile deadhead. The baked sign texture keeps the
-        // original Amazon branding, so the site code is not restated on the panel.
-        var hs = new GameObject("HighwaySign").transform; hs.SetParent(g, false); hs.position = new Vector3(14f, 0, Mathf.Max(start + 100f, gateFaceZ - 2f * 1609.344f));   // posts clear of the 3 m shoulder
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, true);
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, true);
-        MeshFactory.Box("SignPanel", new Vector3(8.1f, 2.9f, 0.16f), new Vector3(0, 4.2f, 0), green, hs, false);
-        SignQuad("HighwaySignTex", "highway_sign", 7.7f, 2.55f, new Vector3(0f, 4.2f, -0.10f), 0f, hs);
-
-        int miles = Mathf.Max(1, Mathf.RoundToInt((end - start) / 1609.344f));
-        for (int mi = 1; mi <= miles; mi++)
+        // Force the route to meet the lot and the gate heading straight north.
+        float endX = xs[n - 1], endY = ys[n - 1];
+        for (int i = 0; i < n; i++)
         {
-            float z = 8f + mi * 1609.344f;
-            if (z > end - 30f) break;
-            int toGo = Mathf.RoundToInt((gateFaceZ - z) / 1609.344f);
-            if (toGo < 1) break;
-            MeshFactory.Cyl("MilePost", 0.06f, 1.5f, new Vector3(9.2f, 0.75f, z), metal, g, false);
-            MeshFactory.Box("MilePlate", new Vector3(0.78f, 0.34f, 0.05f), new Vector3(9.2f, 1.45f, z - 0.03f), green, g, false);
-            var t = MeshFactory.Text3D("MileText", "RNO  " + toGo + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
-            MeshFactory.FaceBack(t);
+            float f = i / (n - 1);
+            xs[i] -= endX * Mathf.SmoothStep(0f, 1f, f);
+            ys[i] -= endY * f;
         }
+
+        var pts = new List<Vector3>(n);
+        var tans = new List<Vector3>(n);
+        var widths = new List<float>(n);
+        var kinds = new List<int>(n);
+        for (int i = 0; i < n; i++)
+            pts.Add(new Vector3(xs[i], startY + ys[i], startZ + Lgeo * i / (n - 1)));
+        for (int i = 0; i < n; i++)
+        {
+            int i0 = Mathf.Max(0, i - 1), i1 = Mathf.Min(n - 1, i + 1);
+            Vector3 d = pts[i1] - pts[i0];
+            tans.Add(d.sqrMagnitude > 1e-8f ? d.normalized : Vector3.forward);
+        }
+        for (int i = 0; i < n; i++)
+        {
+            float s = Lgeo * i / (n - 1);
+            float f = Mathf.Min(1f, s / L);
+            int kind; float w;
+            if (f < 0.70f) { kind = 0; w = 9f; }                                  // rural two-lane
+            else if (f < 0.74f) { kind = 1; w = Mathf.Lerp(9f, 22f, (f - 0.70f) / 0.04f); }  // on-ramp
+            else if (f < 0.97f) { kind = 2; w = 22f; }                             // interstate
+            else { kind = 3; w = Mathf.Lerp(22f, 9f, Mathf.Min(1f, (f - 0.97f) / 0.03f)); }   // exit
+            kinds.Add(kind); widths.Add(w);
+        }
+
+        BuildRouteMeshes(root, pts, tans, widths, kinds, L);
+        endZ = startZ + L;
+    }
+
+    // One quad between two samples for a ribbon centred on offset off.
+    static void RibbonQuad(List<Vector3> v, List<Vector2> uv, List<int> t,
+        Vector3 a, Vector3 b, Vector3 leftA, Vector3 leftB, float offA, float offB, float hw, float yOff, float vA, float vB)
+    {
+        Vector3 p0 = a + leftA * (offA - hw) + Vector3.up * yOff;
+        Vector3 p1 = a + leftA * (offA + hw) + Vector3.up * yOff;
+        Vector3 p2 = b + leftB * (offB + hw) + Vector3.up * yOff;
+        Vector3 p3 = b + leftB * (offB - hw) + Vector3.up * yOff;
+        int i0 = v.Count;
+        v.Add(p0); v.Add(p1); v.Add(p2); v.Add(p3);
+        uv.Add(new Vector2(0f, vA)); uv.Add(new Vector2(1f, vA));
+        uv.Add(new Vector2(1f, vB)); uv.Add(new Vector2(0f, vB));
+        t.Add(i0); t.Add(i0 + 2); t.Add(i0 + 1);
+        t.Add(i0); t.Add(i0 + 3); t.Add(i0 + 2);
+    }
+
+    static void BuildRouteMeshes(Transform root, List<Vector3> pts, List<Vector3> tans,
+        List<float> widths, List<int> kinds, float routeL)
+    {
+        var g = new GameObject("Route").transform; g.SetParent(root, false);
+        var asphalt = MeshFactory.TexMat("RouteAsphalt", asphaltD, asphaltN, new Vector2(1f, 1f), 0.06f);
+        Tint(asphalt, new Color(1f, 1f, 1f)); Bump(asphalt, 0.34f);
+        var white = MeshFactory.Mat("RouteWhite", new Color(0.92f, 0.92f, 0.90f), 0f, 0.30f);
+        var yellow = MeshFactory.Mat("RouteYellow", new Color(0.85f, 0.68f, 0.20f), 0f, 0.30f);
+        var dirt = MeshFactory.Mat("RouteDirt", new Color(0.56f, 0.50f, 0.40f), 0f, 0.06f);
+
+        int n = pts.Count;
+        var left = new List<Vector3>(n);
+        for (int i = 0; i < n; i++)
+            left.Add(Vector3.Cross(Vector3.up, tans[i]).normalized);
+
+        // roadbed: a wide dirt ribbon under the pavement
+        var bedV = new List<Vector3>(); var bedUV = new List<Vector2>(); var bedT = new List<int>();
+        for (int i = 0; i < n - 1; i++)
+        {
+            float v0 = i * 25f / 8f, v1 = (i + 1) * 25f / 8f;
+            RibbonQuad(bedV, bedUV, bedT, pts[i], pts[i + 1], left[i], left[i + 1], 0f, 0f, 16f, -0.03f, v0, v1);
+        }
+        var bed = new Mesh { name = "RouteBed" };
+        bed.SetVertices(bedV); bed.SetUVs(0, bedUV); bed.SetTriangles(bedT, 0);
+        bed.RecalculateNormals(); bed.RecalculateBounds();
+        var bedGo = new GameObject("RouteBed"); bedGo.transform.SetParent(g, false);
+        bedGo.AddComponent<MeshFilter>().sharedMesh = bed;
+        bedGo.AddComponent<MeshRenderer>().sharedMaterial = dirt;
+
+        // asphalt in 500 m chunks, each with its own mesh collider
+        int chunk = 20;
+        for (int c0 = 0; c0 < n - 1; c0 += chunk)
+        {
+            int c1 = Mathf.Min(n - 1, c0 + chunk);
+            var v = new List<Vector3>(); var uv = new List<Vector2>(); var t = new List<int>();
+            float v0 = c0 * 25f / 4f;
+            for (int i = c0; i < c1; i++)
+            {
+                float v1 = (i + 1) * 25f / 4f;
+                int k = kinds[i];
+                float w = widths[i];
+                if (k == 2)
+                {
+                    // two carriageways either side of a 1.5 m median
+                    RibbonQuad(v, uv, t, pts[i], pts[i + 1], left[i], left[i + 1], 5.91f, 5.91f, 5.16f, 0f, v0, v1);
+                    RibbonQuad(v, uv, t, pts[i], pts[i + 1], left[i], left[i + 1], -5.91f, -5.91f, 5.16f, 0f, v0, v1);
+                    RibbonQuad(v, uv, t, pts[i], pts[i + 1], left[i], left[i + 1], 0f, 0f, 0.75f, 0.02f, v0, v1);
+                }
+                else
+                {
+                    RibbonQuad(v, uv, t, pts[i], pts[i + 1], left[i], left[i + 1], 0f, 0f, w * 0.5f, 0f, v0, v1);
+                }
+            }
+            var m = new Mesh { name = "RouteAsphalt" + c0 };
+            m.SetVertices(v); m.SetUVs(0, uv); m.SetTriangles(t, 0);
+            m.RecalculateNormals(); m.RecalculateBounds();
+            var go = new GameObject("RouteAsphalt");
+            go.transform.SetParent(g, false);
+            go.AddComponent<MeshFilter>().sharedMesh = m;
+            go.AddComponent<MeshRenderer>().sharedMaterial = asphalt;
+            var col = go.AddComponent<MeshCollider>();
+            col.sharedMesh = m;
+            col.convex = false;
+        }
+
+        // markings: continuous white/yellow lines plus 3 m dashes on a 12 m cycle
+        var wv = new List<Vector3>(); var wuv = new List<Vector2>(); var wt = new List<int>();
+        var yv = new List<Vector3>(); var yuv = new List<Vector2>(); var yt = new List<int>();
+        for (int i = 0; i < n - 1; i++)
+        {
+            int k = kinds[i];
+            float w = widths[i];
+            float hw = w * 0.5f;
+            if (k == 0 || k == 1 || k == 3)
+            {
+                RibbonQuad(wv, wuv, wt, pts[i], pts[i + 1], left[i], left[i + 1], hw - 0.2f, hw - 0.2f, 0.075f, 0.006f, 0f, 1f);
+                RibbonQuad(wv, wuv, wt, pts[i], pts[i + 1], left[i], left[i + 1], -(hw - 0.2f), -(hw - 0.2f), 0.075f, 0.006f, 0f, 1f);
+                if (k != 1)
+                {
+                    // yellow no-passing centre, dashed 3 m on / 9 m off
+                    float s0 = i * 25f;
+                    for (float s = s0; s < s0 + 25f; s += 12f)
+                    {
+                        float a = Mathf.Max(s0, s), b = Mathf.Min(s0 + 25f, s + 3f);
+                        if (b <= a) continue;
+                        float fa = (a - i * 25f) / 25f, fb = (b - i * 25f) / 25f;
+                        Vector3 pa = Vector3.Lerp(pts[i], pts[i + 1], fa);
+                        Vector3 pb = Vector3.Lerp(pts[i], pts[i + 1], fb);
+                        Vector3 la = Vector3.Lerp(left[i], left[i + 1], fa).normalized;
+                        Vector3 lb = Vector3.Lerp(left[i], left[i + 1], fb).normalized;
+                        RibbonQuad(yv, yuv, yt, pa, pb, la, lb, 0f, 0f, 0.075f, 0.008f, 0f, 1f);
+                    }
+                }
+            }
+            else if (k == 2)
+            {
+                // yellow line at the median side of each carriageway, white at the shoulder
+                RibbonQuad(yv, yuv, yt, pts[i], pts[i + 1], left[i], left[i + 1], 0.95f, 0.95f, 0.075f, 0.008f, 0f, 1f);
+                RibbonQuad(yv, yuv, yt, pts[i], pts[i + 1], left[i], left[i + 1], -0.95f, -0.95f, 0.075f, 0.008f, 0f, 1f);
+                RibbonQuad(wv, wuv, wt, pts[i], pts[i + 1], left[i], left[i + 1], 10.87f, 10.87f, 0.075f, 0.006f, 0f, 1f);
+                RibbonQuad(wv, wuv, wt, pts[i], pts[i + 1], left[i], left[i + 1], -10.87f, -10.87f, 0.075f, 0.006f, 0f, 1f);
+                // lane divider dashes
+                float s0 = i * 25f;
+                for (float s = s0; s < s0 + 25f; s += 12f)
+                {
+                    float a = Mathf.Max(s0, s), b = Mathf.Min(s0 + 25f, s + 3f);
+                    if (b <= a) continue;
+                    float fa = (a - i * 25f) / 25f, fb = (b - i * 25f) / 25f;
+                    Vector3 pa = Vector3.Lerp(pts[i], pts[i + 1], fa);
+                    Vector3 pb = Vector3.Lerp(pts[i], pts[i + 1], fb);
+                    Vector3 la = Vector3.Lerp(left[i], left[i + 1], fa).normalized;
+                    Vector3 lb = Vector3.Lerp(left[i], left[i + 1], fb).normalized;
+                    RibbonQuad(wv, wuv, wt, pa, pb, la, lb, 4.41f, 4.41f, 0.06f, 0.008f, 0f, 1f);
+                    RibbonQuad(wv, wuv, wt, pa, pb, la, lb, -4.41f, -4.41f, 0.06f, 0.008f, 0f, 1f);
+                }
+            }
+        }
+        var wm = new Mesh { name = "RouteWhiteLines" };
+        wm.SetVertices(wv); wm.SetUVs(0, wuv); wm.SetTriangles(wt, 0);
+        wm.RecalculateBounds();
+        var wgo = new GameObject("RouteWhiteLines"); wgo.transform.SetParent(g, false);
+        wgo.AddComponent<MeshFilter>().sharedMesh = wm;
+        wgo.AddComponent<MeshRenderer>().sharedMaterial = white;
+        var ym = new Mesh { name = "RouteYellowLines" };
+        ym.SetVertices(yv); ym.SetUVs(0, yuv); ym.SetTriangles(yt, 0);
+        ym.RecalculateBounds();
+        var ygo = new GameObject("RouteYellowLines"); ygo.transform.SetParent(g, false);
+        ygo.AddComponent<MeshFilter>().sharedMesh = ym;
+        ygo.AddComponent<MeshRenderer>().sharedMaterial = yellow;
     }
 
     // The shift opens in a small single-story house on the edge of a Nevada

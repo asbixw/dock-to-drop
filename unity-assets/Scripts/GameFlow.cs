@@ -188,20 +188,11 @@ public class GameFlow : MonoBehaviour
         Truck = World.truck;
         Truck.player = Player;
         Truck.audio = Audio;
-        if (World.gateTrigger != null)
-        {
-            // The trigger fires when the nose of the cab enters it, not when
-            // the truck's origin reaches the trigger centre. Measure to that
-            // contact point so a straight run lands exactly on the assignment
-            // instead of reading a mile and a half short.
-            Vector3 gate = World.gateTrigger.transform.position;
-            var gateCol = World.gateTrigger.GetComponent<BoxCollider>();
-            float gateHalf = gateCol != null ? gateCol.size.z * 0.5f : 0f;
-            var hull = Truck.GetComponent<BoxCollider>();
-            float nose = hull != null ? hull.center.z + hull.size.z * 0.5f : 0f;
-            Vector3 contact = gate - World.gateTrigger.transform.forward * (gateHalf + nose);
-            deadheadRouteLength = Mathf.Max(1f, FlatXZ(contact - Truck.transform.position).magnitude);
-        }
+        // The route builder lays out the centreline and places the gate at
+        // exactly the assigned distance from the truck, so the assignment is
+        // the route length; a straight-line measurement would be short on a
+        // curving road.
+        deadheadRouteLength = World.routeLength > 1f ? World.routeLength : DeadheadAssignedMiles * MetresPerMile;
         deadheadLastPos = Truck.transform.position;
         float assignedMetres = DeadheadAssignedMiles * MetresPerMile;
         if (Mathf.Abs(deadheadRouteLength - assignedMetres) > 1f)
@@ -1240,7 +1231,8 @@ public class GameFlow : MonoBehaviour
             deadheadLastPos = p;
             return;
         }
-        float step = FlatXZ(p - deadheadLastPos).magnitude;
+        // Three-dimensional distance: grades are part of the route.
+        float step = (p - deadheadLastPos).magnitude;
         deadheadLastPos = p;
         // A teleport or a scene cut is not driving. Allow for low frame rates:
         // at 10 fps and 25 m/s a real frame covers 2.5 m, and that distance
