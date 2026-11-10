@@ -41,6 +41,7 @@ public class GameFlow : MonoBehaviour
     GameObject startPanel;
     bool started;
     bool autoShotMode;
+    bool menuShotMode;
     // trailer coupling
     BoxCollider doorCol, seatCol, linesCol, crankCol;
     Interactable ignitionIt;
@@ -61,17 +62,22 @@ public class GameFlow : MonoBehaviour
     int backingContacts;
     TrailerRig Rig => World != null ? World.trailerRig : null;
     bool InspectionDone => inspected >= 5 && sealPhotoSent;
-    string DeadheadObjective => "Deadhead " + DeadheadAssignedMiles + " mi to Gate 1 · Amazon DFW9.";
+    string DeadheadObjective => "Deadhead to Gate 1 · DFW9. Training slice "
+        + DeadheadRouteMiles.ToString("F2") + " mi (assigned " + DeadheadAssignedMiles + " mi).";
     bool autoPlayMode;
     bool uiShotMode;
     string shotDir;
 
     // ---- deadhead -------------------------------------------------------
-    // The travel center and DFW9 are a compressed slice of a real run: the
-    // assigned 32/60 miles map onto the two-lane between the lot and Gate 1.
-    // The odometer integrates the truck's actual path, so detours count too.
+    // The assignment is 32/60 miles, but the drivable world is ~200 m from the
+    // lot to Gate 1. Earlier builds silently compressed those miles onto the
+    // short road. That is gone: the odometer integrates the truck's real path at
+    // 1 world unit = 1 metre, and every trip line says "training slice" next to
+    // the assigned distance. A full 32/60-mile highway would need tens of km of
+    // extra geometry; this build is honest about the shorter route instead.
     public int DeadheadAssignedMiles { get; private set; } = 32;
     const float DeadheadMph = 55f;
+    const float MetresPerMile = 1609.344f;
     float deadheadRouteLength = 180f;
     float deadheadWorld;
     float deadheadMiles;
@@ -87,7 +93,7 @@ public class GameFlow : MonoBehaviour
     public bool IsEnded => ended;
     public bool LoadVerified => loadVerified;
 
-    public bool IsAutomation => autoShotMode || autoPlayMode || uiShotMode || HasArg("-perfprobe");
+    public bool IsAutomation => autoShotMode || menuShotMode || autoPlayMode || uiShotMode || HasArg("-perfprobe");
 
     // When the player switches to another app, the game goes quiet and drops to a
     // low frame rate so it neither drones on in the background nor slows the Mac.
@@ -139,6 +145,7 @@ public class GameFlow : MonoBehaviour
         QualitySettings.vSyncCount = 1;
         var args = System.Environment.GetCommandLineArgs();
         autoShotMode = HasArg("-autoshot");
+        menuShotMode = HasArg("-menushot");
         autoPlayMode = HasArg("-autoplay");
         uiShotMode = HasArg("-uishot");
         // Dispatch picks one of two deadheads. Automation stays deterministic;
@@ -147,7 +154,7 @@ public class GameFlow : MonoBehaviour
             : (IsAutomation ? 32 : (UnityEngine.Random.value < 0.5f ? 32 : 60));
         shotDir = Application.persistentDataPath;
         for (int i = 0; i < args.Length; i++) if (args[i] == "-shotdir" && i + 1 < args.Length) shotDir = args[i + 1];
-        if (autoShotMode || uiShotMode) System.IO.Directory.CreateDirectory(shotDir);
+        if (autoShotMode || menuShotMode || uiShotMode) System.IO.Directory.CreateDirectory(shotDir);
         // Automation runs are for pictures and logs, often behind other windows:
         // they never make sound.
         if (IsAutomation) AudioListener.volume = 0f;
@@ -178,8 +185,8 @@ public class GameFlow : MonoBehaviour
             deadheadRouteLength = Mathf.Max(1f, FlatXZ(contact - Truck.transform.position).magnitude);
         }
         deadheadLastPos = Truck.transform.position;
-        Debug.Log("D2D DEADHEAD assigned=" + DeadheadAssignedMiles + " route=" + deadheadRouteLength.ToString("F1")
-            + " scale=" + MilesPerUnit.ToString("F4") + " mi/unit");
+        Debug.Log("D2D DEADHEAD assigned=" + DeadheadAssignedMiles + " routeMetres=" + deadheadRouteLength.ToString("F1")
+            + " routeMiles=" + DeadheadRouteMiles.ToString("F3") + " (odometer: 1 unit = 1 m, no compression)");
         BuildTruckInteractions();
         Phone = new GameObject("PhoneUI").AddComponent<PhoneUI>();
         Phone.sealTarget = World.sealTarget;
@@ -197,6 +204,7 @@ public class GameFlow : MonoBehaviour
         hudCanvas.gameObject.SetActive(false);
         Player.SetUILock(true);
         if (autoShotMode) StartCoroutine(AutoShotRoutine());
+        else if (menuShotMode) StartCoroutine(MenuShotRoutine());
         else if (autoPlayMode) StartCoroutine(AutoPlayRoutine());
         else if (uiShotMode) StartCoroutine(UIShotRoutine());
         else if (HasArg("-perfprobe")) StartCoroutine(PerfProbe());
@@ -416,7 +424,9 @@ public class GameFlow : MonoBehaviour
     {
         if (gatePassed) { RefreshObjective(); return; }
         SetObjective(DeadheadObjective);
-        ShowSubtitle("Engine running. Deadhead " + DeadheadAssignedMiles + " miles to DFW9. Follow the two-lane north; Gate 1 is on the right.", 5f);
+        ShowSubtitle("Engine running. Follow the two-lane north to Gate 1. This is a "
+            + DeadheadRouteMiles.ToString("F2") + "-mile training slice of the " + DeadheadAssignedMiles
+            + "-mile assignment; the odometer counts only what you drive.", 6f);
     }
 
     public void OnExitedTruck()
@@ -709,7 +719,8 @@ public class GameFlow : MonoBehaviour
         endSeal.text = "482913";
         endTime.text = minutes + ":" + secs.ToString("00");
         if (endNote != null)
-            endNote.text = "DEADHEAD " + deadheadMiles.ToString("F1") + " MI · ARR " + (deadheadArrived ? deadheadArrivalClock : "--:--")
+            endNote.text = "DEADHEAD " + deadheadMiles.ToString("F2") + " MI DRIVEN · TRAINING SLICE OF "
+                + DeadheadAssignedMiles + " MI · ARR " + (deadheadArrived ? deadheadArrivalClock : "--:--")
                 + "   ·   LOADED 240 MI · $2,450";
     }
 
@@ -1007,11 +1018,15 @@ public class GameFlow : MonoBehaviour
     int speedoKey = -1;
 
     // ---- deadhead -------------------------------------------------------
-    float MilesPerUnit => deadheadRouteLength > 0.01f ? DeadheadAssignedMiles / deadheadRouteLength : 0f;
+    // 1 world unit is 1 metre. The odometer is therefore the distance actually
+    // driven, never a scale factor onto a shorter road.
+    float DeadheadRouteMiles => deadheadRouteLength / MetresPerMile;
+    float MilesPerUnit => 1f / MetresPerMile;
     float DeadheadRemainingMiles => Mathf.Max(0f, DeadheadAssignedMiles - deadheadMiles);
+    float RouteRemainingMiles => Mathf.Max(0f, DeadheadRouteMiles - deadheadMiles);
     int ShiftClockMinutes => 5 * 60 + 40 + Mathf.FloorToInt(playTime / 60f);
     string ClockNow => ClockString(ShiftClockMinutes);
-    string DeadheadEta => ClockString(ShiftClockMinutes + Mathf.CeilToInt(DeadheadRemainingMiles * 60f / DeadheadMph));
+    string DeadheadEta => ClockString(ShiftClockMinutes + Mathf.CeilToInt(RouteRemainingMiles * 60f / DeadheadMph));
     static string ClockString(int total) => (total / 60 % 24).ToString("00") + ":" + (total % 60).ToString("00");
 
     void UpdateDeadhead()
@@ -1038,11 +1053,8 @@ public class GameFlow : MonoBehaviour
         if (step < 0.0005f) return;
         deadheadWorld += step;
         deadheadMiles = deadheadWorld * MilesPerUnit;
-        // The slice is compressed. Advance the shift clock at road speed so a
-        // 32/60-mile deadhead arrives at a believable time instead of six
-        // seconds after it left the lot.
-        float gameMinutes = (step * MilesPerUnit) * (60f / DeadheadMph);
-        playTime += gameMinutes * 60f;
+        // No clock compression: playTime already advances in real time, and the
+        // odometer now reports the metres the truck actually covered.
     }
 
     void UpdateTripHud()
@@ -1055,23 +1067,19 @@ public class GameFlow : MonoBehaviour
         if (!show) return;
         if (hold)
         {
-            tripKicker.text = "DEADHEAD COMPLETE · DFW9";
-            tripMiles.text = deadheadMiles.ToString("F1") + " MI";
-            float over = deadheadMiles - DeadheadAssignedMiles;
-            tripDetail.text = "ARRIVED " + deadheadArrivalClock + " · "
-                + (over > 0.05f ? "+" + over.ToString("F1") + " MI OVER"
-                   : DeadheadRemainingMiles > 0.5f ? DeadheadRemainingMiles.ToString("F1") + " MI SHORT"
-                   : "ON ASSIGNMENT");
-            tripEta.text = "YARD MOVES NOT COUNTED";
+            tripKicker.text = "TRAINING SLICE COMPLETE · DFW9";
+            tripMiles.text = deadheadMiles.ToString("F2") + " MI";
+            tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI · ASSIGNED " + DeadheadAssignedMiles + " MI";
+            tripEta.text = "ODOMETER = DISTANCE ACTUALLY DRIVEN";
             return;
         }
         tripRefresh -= Time.unscaledDeltaTime;
         if (tripRefresh > 0f) return;
         tripRefresh = 0.12f;
-        tripKicker.text = "DEADHEAD · DFW9";
-        tripMiles.text = DeadheadAssignedMiles + " MI";
-        tripDetail.text = deadheadMiles.ToString("F1") + " driven · " + DeadheadRemainingMiles.ToString("F1") + " to go";
-        tripEta.text = "DEP " + deadheadDepartClock + " · ETA " + DeadheadEta;
+        tripKicker.text = "DEADHEAD · DFW9 · TRAINING SLICE";
+        tripMiles.text = deadheadMiles.ToString("F2") + " MI";
+        tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI OF " + DeadheadAssignedMiles + " ASSIGNED";
+        tripEta.text = "DEP " + deadheadDepartClock + " · ETA " + DeadheadEta + " · 1 UNIT = 1 M";
     }
 
     void CompleteDeadhead()
@@ -1080,18 +1088,17 @@ public class GameFlow : MonoBehaviour
         deadheadArrived = true;
         deadheadActive = false;
         deadheadArrivalClock = ClockNow;
-        bool realRun = deadheadMiles > 0.5f;
-        if (realRun) deadheadHoldUntil = Time.unscaledTime + 6f;
+        bool realRun = deadheadWorld > 5f;
+        if (realRun) deadheadHoldUntil = Time.unscaledTime + 7f;
         UpdateTripHud();
-        Debug.Log("D2D DEADHEAD assigned=" + DeadheadAssignedMiles + " route=" + deadheadRouteLength.ToString("F1")
-            + " drivenUnits=" + deadheadWorld.ToString("F1") + " miles=" + deadheadMiles.ToString("F2")
-            + " remaining=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
+        Debug.Log("D2D DEADHEAD assigned=" + DeadheadAssignedMiles + " routeMiles=" + DeadheadRouteMiles.ToString("F3")
+            + " drivenUnits=" + deadheadWorld.ToString("F1") + " miles=" + deadheadMiles.ToString("F3")
+            + " remainingAssigned=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
         if (!realRun) return;
-        if (DeadheadRemainingMiles > 0.5f)
-            ShowWarning("Arrived at DFW9 " + DeadheadRemainingMiles.ToString("F1") + " mi short of the assigned deadhead.", 4f, 1);
-        else
-            ShowSubtitle("DEADHEAD COMPLETE · " + deadheadMiles.ToString("F1") + " MI · ARRIVED " + deadheadArrivalClock
-                + "\nYard moves are not counted on the trip.", 5f);
+        // Never claim the assigned 32/60 miles were driven on this short route.
+        // The HUD, this line and the debrief all say "training slice".
+        ShowSubtitle("TRAINING SLICE COMPLETE · " + deadheadMiles.ToString("F2") + " MI DRIVEN\n"
+            + "Assigned " + DeadheadAssignedMiles + " mi; this route is a short training slice, not a compressed run.", 6f);
     }
 
     // Render scale. On a Retina Mac the window is ~2940 px wide and the GPU
@@ -1374,8 +1381,8 @@ public class GameFlow : MonoBehaviour
         yield return new WaitForSeconds(0.3f);
         inspected = 5;
         sealPhotoSent = true;
-        int deadheadMinutes = Mathf.CeilToInt(DeadheadAssignedMiles * 60f / DeadheadMph);
-        deadheadMiles = DeadheadAssignedMiles;
+        int deadheadMinutes = Mathf.CeilToInt(DeadheadRouteMiles * 60f / DeadheadMph);
+        deadheadMiles = DeadheadRouteMiles;
         deadheadWorld = deadheadRouteLength;
         deadheadArrived = true;
         deadheadArrivalClock = ClockString(5 * 60 + 40 + deadheadMinutes);
@@ -1385,6 +1392,18 @@ public class GameFlow : MonoBehaviour
         yield return StartCoroutine(Shot("17_end"));
 
         Debug.Log("D2D UISHOT done");
+        Application.Quit();
+    }
+
+    // -menushot: capture the title card as it really appears on launch (the
+    // composed menu camera, not a staged CineShot) then quit. Used to verify
+    // the driver-mesh clipping fix without touching gameplay.
+    IEnumerator MenuShotRoutine()
+    {
+        Debug.Log("D2D MENUSHOT start");
+        yield return new WaitForSeconds(1.4f);
+        yield return StartCoroutine(Shot("menu"));
+        Debug.Log("D2D MENUSHOT done");
         Application.Quit();
     }
 
@@ -1589,7 +1608,7 @@ public class GameFlow : MonoBehaviour
             {
                 nextTripLog = Time.time + 3f;
                 Debug.Log("D2D PLAY deadhead z=" + p.z.ToString("F1") + " speed=" + Truck.speed.ToString("F1")
-                    + " miles=" + deadheadMiles.ToString("F2") + " remaining=" + DeadheadRemainingMiles.ToString("F2")
+                    + " miles=" + deadheadMiles.ToString("F3") + " assignedRemaining=" + DeadheadRemainingMiles.ToString("F2")
                     + " clock=" + ClockNow);
             }
             yield return null;
@@ -1598,7 +1617,7 @@ public class GameFlow : MonoBehaviour
         Truck.touchSteer = 0f;
         Time.timeScale = 1f;
         Debug.Log("D2D PLAY guardOpen=" + guardOpen + " truckZ=" + Truck.transform.position.z
-            + " miles=" + deadheadMiles.ToString("F2") + " remaining=" + DeadheadRemainingMiles.ToString("F2")
+            + " miles=" + deadheadMiles.ToString("F3") + " assignedRemaining=" + DeadheadRemainingMiles.ToString("F2")
             + " arrival=" + deadheadArrivalClock);
         if (!guardOpen)
         {
@@ -1673,7 +1692,7 @@ public class GameFlow : MonoBehaviour
             + " coupled=" + (Rig != null && Rig.coupled) + " lines=" + (Rig != null && Rig.linesConnected)
             + " gearUp=" + (Rig != null && Rig.gearUp) + " air=" + (Rig != null && Rig.airSupplied)
             + " deadhead=" + DeadheadAssignedMiles + " driven=" + deadheadMiles.ToString("F2")
-            + " remaining=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
+            + " assignedRemaining=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
         Application.Quit();
     }
 
@@ -1936,13 +1955,13 @@ public class GameFlow : MonoBehaviour
         // moves after the gate are explicitly not part of the trip.
         var tp = UIFactory.Panel(hudRoot.transform, "Trip", new Vector2(380, 152), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.64f), true, 18);
         UIFactory.TopRight(tp.rectTransform, new Vector2(24, -132), new Vector2(380, 152));
-        tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · DFW9", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · DFW9 · TRAINING SLICE", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripKicker.rectTransform, new Vector2(18, -12), new Vector2(344, 22));
-        tripMiles = UIFactory.Label(tp.transform, "Miles", "32 MI", 38, new Color(0.94f, 0.96f, 0.98f), TextAnchor.UpperLeft, FontStyle.Bold);
+        tripMiles = UIFactory.Label(tp.transform, "Miles", "0.00 MI", 38, new Color(0.94f, 0.96f, 0.98f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripMiles.rectTransform, new Vector2(18, -32), new Vector2(200, 46));
-        tripDetail = UIFactory.Label(tp.transform, "Detail", "0.0 driven · 32.0 to go", 17, new Color(0.74f, 0.82f, 0.87f), TextAnchor.UpperLeft);
+        tripDetail = UIFactory.Label(tp.transform, "Detail", "DRIVEN · ROUTE 0.12 MI OF 32 ASSIGNED", 17, new Color(0.74f, 0.82f, 0.87f), TextAnchor.UpperLeft);
         UIFactory.TopLeft(tripDetail.rectTransform, new Vector2(18, -82), new Vector2(344, 24));
-        tripEta = UIFactory.Label(tp.transform, "Eta", "DEP 05:40 · ETA 06:15", 16, new Color(0.58f, 0.72f, 0.80f), TextAnchor.UpperLeft);
+        tripEta = UIFactory.Label(tp.transform, "Eta", "DEP 05:40 · ETA 05:41 · 1 UNIT = 1 M", 16, new Color(0.58f, 0.72f, 0.80f), TextAnchor.UpperLeft);
         UIFactory.TopLeft(tripEta.rectTransform, new Vector2(18, -108), new Vector2(344, 24));
         tripPanel = tp.gameObject;
         tripPanel.SetActive(false);
