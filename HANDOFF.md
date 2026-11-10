@@ -7,6 +7,17 @@ Backups of the files as they were before coupling (plus the cab-pass HANDOFF/STA
 - Final pass (`dae53d5` + self-checks): low-fps odometer step allowance, 1 km delineator spacing, stale
   "training slice" copy removed, route-length mismatch error, mirror shader/renderer warnings, debrief log.
 
+## 2026-11-11: MAC PLAYTEST #2 fixes
+
+- **#1 Mirror shader**: `MirrorView.Start` tries `Unlit/Texture`, falls back to `Standard`, and skips material creation if both are missing. `Unlit/Texture` (fileID 10752) added to `m_AlwaysIncludedShaders` in `GraphicsSettings.asset`.
+- **#2 Tree in lane**: perimeter tree loops skip `|x| < 14.5 m` when `z > 217.5` (road half-width + shoulder + margin).
+- **#3 Trip HUD**: trip panel height 170; ETA line at -118, clear of the assigned line.
+- **#4 Waypoint**: targets offset laterally off A-14 (`right * 2.8/3.2`); screen clamp keeps it away from the TAB PHONE hint.
+- **#5 Driver mesh**: `DriverBody.Visible` always applies renderer enabled state; CineShot re-enables renderers after shots.
+- **#6 On-time**: `deadheadOnTime` requires the assigned miles on the odometer, not just the clock.
+- **Older #1**: autoplay deadhead runs at 20x time compression for the full route, logs distance every 5 s real, and no longer forces the gate; `-uishot` staging sets gatePassed/loadVerified/deadheadOnTime/hook flags.
+- Compile `COMPILE OK`; Play Mode unverified.
+
 ## 2026-11-10: stages 3–5 — mirrors/backing lesson, debrief, pause/sensitivity
 
 - **`MirrorView.cs`** (new): each west-coast main mirror gets a 192×384 rear-facing camera that renders every
