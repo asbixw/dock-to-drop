@@ -70,6 +70,7 @@ public static class WorldBuilder
         BuildGate(flow, dest, refs);
         BuildYardProps(dest);
         dest.position = new Vector3(0f, 0f, destOffset);
+        RelocateYardDressing(root, dest, destOffset);
         BuildHighway(root, destOffset);
         Debug.Log("D2D ROUTE length=" + route.ToString("F1") + "m (" + flow.DeadheadAssignedMiles
             + " mi) gateZ=" + (destOffset + 205f).ToString("F1") + " destOffset=" + destOffset.ToString("F1"));
@@ -470,17 +471,22 @@ public static class WorldBuilder
         var wtTxt = MeshFactory.Text3D("TowerText", "DFW9", new Vector3(0f, 21.3f, -4.72f), 0.95f, new Color(0.12f, 0.20f, 0.30f), wt);
         MeshFactory.FaceBack(wtTxt);
 
+        // Yard dressing (staged trailers, container stacks, staff cars) belongs
+        // to the yard, not to the highway that now runs past it. It is built
+        // here and relocated to the Destination root once that exists.
+        var dressing = new GameObject("YardDressing").transform; dressing.SetParent(g, false);
+
         // Rows of staged trailers at the edges of the yard.
-        for (int i = 0; i < 3; i++) ParkedTrailer(g, new Vector3(-78 + i * 4.1f, 0, 252), 0f, i % 2 == 0);
-        for (int i = 0; i < 3; i++) ParkedTrailer(g, new Vector3(94 + i * 4.1f, 0, 250), 0f, i % 2 == 1);
+        for (int i = 0; i < 3; i++) ParkedTrailer(dressing, new Vector3(-78 + i * 4.1f, 0, 252), 0f, i % 2 == 0);
+        for (int i = 0; i < 3; i++) ParkedTrailer(dressing, new Vector3(94 + i * 4.1f, 0, 250), 0f, i % 2 == 1);
 
         // stacked containers in the far corners
-        ContainerStack(g, new Vector3(-88, 0, 312), 2);
-        ContainerStack(g, new Vector3(96, 0, 318), 2);
+        ContainerStack(dressing, new Vector3(-88, 0, 312), 2);
+        ContainerStack(dressing, new Vector3(96, 0, 318), 2);
 
         // staff cars at the office end
         for (int i = 0; i < 3; i++)
-            Car(g, new Vector3(-96 + i * 4.0f, 0, 268 + (i % 2) * 3.5f), 90f + i * 3f,
+            Car(dressing, new Vector3(-96 + i * 4.0f, 0, 268 + (i % 2) * 3.5f), 90f + i * 3f,
                 i == 0 ? new Color(0.16f, 0.18f, 0.22f) : (i == 1 ? new Color(0.44f, 0.10f, 0.08f) : new Color(0.62f, 0.62f, 0.58f)));
 
         // more trees along the perimeter to soften the horizon
@@ -514,8 +520,28 @@ public static class WorldBuilder
         for (int i = 0; i < 26; i++)
         {
             float x = -160 + i * 25f;
+            if (Mathf.Abs(x) < 14.5f) continue;
             MeshFactory.Sphere("Scrub", 1.4f + (i % 4) * 0.22f, new Vector3(x, 0.55f, 208 + (i % 2) * 2f), green, g);
         }
+    }
+
+    // The yard dressing above was authored in yard coordinates, so it has to
+    // travel with the yard. Move it under the Destination root and shift it by
+    // the same offset, so it lands on the yard slab at the end of the highway.
+    static void RelocateYardDressing(Transform root, Transform dest, float offset)
+    {
+        var horizon = root.Find("Horizon");
+        if (horizon == null) return;
+        var dressing = horizon.Find("YardDressing");
+        if (dressing == null) return;
+        var kids = new List<Transform>();
+        foreach (Transform c in dressing) kids.Add(c);
+        foreach (var c in kids)
+        {
+            c.SetParent(dest, true);
+            c.position = c.position + new Vector3(0f, 0f, offset);
+        }
+        dressing.gameObject.SetActive(false);
     }
 
     static void ParkedTrailer(Transform parent, Vector3 pos, float yaw, bool hasLogo)
