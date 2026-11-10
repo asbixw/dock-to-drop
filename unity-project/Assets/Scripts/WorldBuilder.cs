@@ -1728,17 +1728,21 @@ public static class WorldBuilder
         // jersey barriers closing off the west edge of the lot
         for (int i = 0; i < 8; i++)
             PropLibrary.Spawn("JerseyBarrier", OnGround(-36.5f, 4f + i * 3.3f), 90f + (i % 2) * 2f, 2.0f, g, true);
-        // yard: boxes by the dumpster, a covered car in the staff lot
-        Vector3 box = OnGround(-81.2f, 326.4f);
+        // yard: boxes by the dumpster, a covered car in the staff lot.
+        // PropLibrary.Spawn places in world space and Destination has already
+        // been moved to the end of the highway, so convert the authored
+        // yard-local points (SurfaceY uses yard-local coordinates) first.
+        Vector3 Y(Vector3 local) { return yard != null ? yard.TransformPoint(local) : local; }
+        Vector3 box = Y(OnGround(-81.2f, 326.4f));
         for (int i = 0; i < 5; i++)
             PropLibrary.Spawn("CardboardBox", new Vector3(box.x + (i % 3) * 0.55f, box.y + (i / 3) * 0.34f, box.z), i * 23f, 1.4f, yg);
-        PropLibrary.Spawn("CoveredCar", OnGround(-96.5f, 245f), 8f, 1.05f, yg, true);
+        PropLibrary.Spawn("CoveredCar", Y(OnGround(-96.5f, 245f)), 8f, 1.05f, yg, true);
         // scrub along the yard fence and the road verges
         for (int i = 0; i < 18; i++)
         {
             float z = 212f + i * 9.5f;
-            PropLibrary.Spawn(shrubs[i % 4], OnGround(-107f + (i % 3) * 0.8f, z), i * 53f, 0.9f + (i % 4) * 0.15f, yg);
-            PropLibrary.Spawn(shrubs[(i + 2) % 4], OnGround(158f - (i % 3) * 0.8f, z + 4f), i * 71f, 0.9f + (i % 3) * 0.18f, yg);
+            PropLibrary.Spawn(shrubs[i % 4], Y(OnGround(-107f + (i % 3) * 0.8f, z)), i * 53f, 0.9f + (i % 4) * 0.15f, yg);
+            PropLibrary.Spawn(shrubs[(i + 2) % 4], Y(OnGround(158f - (i % 3) * 0.8f, z + 4f)), i * 71f, 0.9f + (i % 3) * 0.18f, yg);
         }
         for (int i = 0; i < 24; i++)
         {
@@ -1859,7 +1863,10 @@ public static class WorldBuilder
         // ---- yard: pallets, chocks and dock lights at the doors
         void PalletStack(Vector3 p, int layers, float yaw)
         {
-            var s = new GameObject("PalletStack").transform; s.SetParent(yg, false); s.position = p; s.rotation = Quaternion.Euler(0f, yaw, 0f);
+            // p is yard-local: Destination has already been moved to the far
+            // end of the highway, so a world position would leave the pallets
+            // beside the travel center.
+            var s = new GameObject("PalletStack").transform; s.SetParent(yg, false); s.localPosition = p; s.localRotation = Quaternion.Euler(0f, yaw, 0f);
             for (int k = 0; k < layers; k++)
             {
                 float y = 0.075f + k * 0.15f;
