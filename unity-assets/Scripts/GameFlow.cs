@@ -679,7 +679,7 @@ public class GameFlow : MonoBehaviour
 
     public void RetryBacking()
     {
-        if (Rig == null || Truck == null) return;
+        if (Rig == null || Truck == null || paused || ended) return;
         Truck.ResetForBacking(backingStartPos, backingStartRot);
         Rig.ResetForRetry();
         backingContacts = 0;
@@ -877,6 +877,8 @@ public class GameFlow : MonoBehaviour
         string overall = "READY TO ROLL";
         if (contactCount > 0 || hardBrakeCount > 0 || engineRunningExits > 0 || backingContacts > 0)
             overall = "SAFETY HOLD — SPEED DOES NOT OFFSET CONTACTS";
+        else if (backingResultShown && !backingPassed)
+            overall = "BACKING NEEDS WORK";
         else if (done < steps || !deadheadArrived)
             overall = "PROCEDURE INCOMPLETE";
         return "SAFETY " + safety + "%   ·   PROCEDURE " + procedure + "%   ·   EFFICIENCY " + Mathf.RoundToInt(efficiency) + "%\n"
@@ -885,6 +887,7 @@ public class GameFlow : MonoBehaviour
             + "INSPECTIONS " + inspected + "/5 · SEAL " + (sealPhotoSent ? "SENT" : "NOT SENT")
             + " · GATE " + (gatePassed ? "CHECKED IN" : "MISSED") + " (" + guardWrongAttempts + " WRONG ANSWERS)"
             + " · DEADHEAD " + (deadheadArrived ? (deadheadOnTime ? "ON TIME" : "LATE") : "NOT ARRIVED")
+            + " · BACKING " + (backingPassed ? "PASS" : backingResultShown ? "NEEDS WORK" : "NOT ATTEMPTED")
             + "   ·   COMPANY STANDARD: 0 CONTACTS [PLACEHOLDER: confirm policy]   ·   " + overall;
     }
 
@@ -2189,7 +2192,7 @@ public class GameFlow : MonoBehaviour
         // Deadhead trip: assigned miles, actual odometer, miles left and ETA.
         // It only appears while the truck is rolling toward DFW9; the yard
         // moves after the gate are explicitly not part of the trip.
-        var tp = UIFactory.Panel(hudRoot.transform, "Trip", new Vector2(380, 152), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.64f), true, 18);
+        var tp = UIFactory.Panel(hudRoot.transform, "Trip", new Vector2(380, 170), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.64f), true, 18);
         UIFactory.TopRight(tp.rectTransform, new Vector2(24, -132), new Vector2(380, 152));
         tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · DFW9", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripKicker.rectTransform, new Vector2(18, -12), new Vector2(344, 22));
@@ -2198,7 +2201,7 @@ public class GameFlow : MonoBehaviour
         tripDetail = UIFactory.Label(tp.transform, "Detail", "DRIVEN · ROUTE 0.12 MI OF 32 ASSIGNED", 17, new Color(0.74f, 0.82f, 0.87f), TextAnchor.UpperLeft);
         UIFactory.TopLeft(tripDetail.rectTransform, new Vector2(18, -82), new Vector2(344, 24));
         tripEta = UIFactory.Label(tp.transform, "Eta", "DEP 05:40 · ETA 05:41 · 1 UNIT = 1 M", 16, new Color(0.58f, 0.72f, 0.80f), TextAnchor.UpperLeft);
-        UIFactory.TopLeft(tripEta.rectTransform, new Vector2(18, -108), new Vector2(344, 24));
+        UIFactory.TopLeft(tripEta.rectTransform, new Vector2(18, -118), new Vector2(344, 24));
         tripPanel = tp.gameObject;
         tripPanel.SetActive(false);
         BuildBackingLesson();
