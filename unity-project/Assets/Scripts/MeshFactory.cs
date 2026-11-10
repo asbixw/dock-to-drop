@@ -88,6 +88,22 @@ public static class MeshFactory
         return m;
     }
 
+    // Opaque, single-sided sign face. Sprites/Default is transparent and
+    // double-sided; for a sign with a white backing board that allowed the
+    // face to be composited more than once (the doubled "1515" report).
+    public static Material SignOpaqueMat(string name, Texture2D tex, Color tint)
+    {
+        var sh = Shader.Find("Unlit/Texture");
+        if (sh == null) sh = Shader.Find("Standard");
+        if (sh == null) sh = Shader.Find("Unlit/Color");
+        var m = new Material(sh) { name = name };
+        if (m.HasProperty("_MainTex")) m.mainTexture = tex;
+        if (m.HasProperty("_Color")) m.color = tint;
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", tint);
+        m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+        return m;
+    }
+
     public static GameObject Box(string name, Vector3 size, Vector3 pos, Material mat, Transform parent = null, bool collider = true)
     {
         var go = GameObject.CreatePrimitive(PrimitiveType.Cube);

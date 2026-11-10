@@ -6,6 +6,9 @@ using UnityEngine;
 // arms and legs; third person (V) shows the whole driver.
 public class DriverBody : MonoBehaviour
 {
+    // The driver lives on its own layer so the title camera can exclude him
+    // even if a renderer is briefly re-enabled by a scripted shot.
+    public const int Layer = 8;
     public PlayerController pc;
     public Transform model;
     Animation anim;
@@ -25,8 +28,15 @@ public class DriverBody : MonoBehaviour
         var inst = Object.Instantiate(prefab, pc.transform);
         inst.name = "DriverModel";
         db.model = inst.transform;
+        SetLayerRecursive(inst.transform, Layer);
         db.Setup();
         return db;
+    }
+
+    static void SetLayerRecursive(Transform t, int layer)
+    {
+        t.gameObject.layer = layer;
+        foreach (Transform c in t) SetLayerRecursive(c, layer);
     }
 
     void Setup()

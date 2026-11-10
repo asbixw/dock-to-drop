@@ -107,6 +107,11 @@ public static class PropLibrary
         var lod0 = Spawn(n, pos, yaw, s, root);
         var lod1 = Has(n + "_LOD1") ? Spawn(n + "_LOD1", pos, yaw, s, root) : null;
         var group = root.gameObject.AddComponent<LODGroup>();
+        // Cross-fading between two different tree meshes also cross-fades the
+        // shadow caster, which made roadside shadows blink. Hard-switch the LODs
+        // instead; the switch is far enough away that the pop is invisible.
+        group.fadeMode = LODFadeMode.None;
+        group.animateCrossFading = false;
         var r0 = lod0.GetComponentsInChildren<Renderer>();
         if (lod1 != null)
         {

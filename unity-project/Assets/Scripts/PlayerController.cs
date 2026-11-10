@@ -58,7 +58,9 @@ public class PlayerController : MonoBehaviour
     // driver model is visible in third person, so the menu frames the inside of
     // the driver's head and arms.
     bool menuView;
+    int menuSavedCullingMask = -1;
 
+    public bool MenuView => menuView;
     public bool IsSeated => seated;
     bool thirdPersonBeforeSeat;
     TruckController seatTruck;
@@ -96,9 +98,14 @@ public class PlayerController : MonoBehaviour
         if (body != null)
         {
             body.Visible = false;
-            body.model.gameObject.SetActive(false);
+            if (body.model != null) body.model.gameObject.SetActive(false);
         }
         if (cam == null) return;
+        // Belt and braces: a scripted camera move or a late renderer toggle must
+        // never put the driver mesh in the title view. The body has its own
+        // layer, so the menu camera simply does not see it.
+        if (menuSavedCullingMask < 0) menuSavedCullingMask = cam.cullingMask;
+        cam.cullingMask = menuSavedCullingMask & ~(1 << DriverBody.Layer);
         cam.transform.SetParent(null, true);
         cam.transform.position = eye;
         cam.transform.rotation = Quaternion.LookRotation((look - eye).normalized, Vector3.up);
@@ -112,7 +119,7 @@ public class PlayerController : MonoBehaviour
     {
         if (!menuView) return;
         menuView = false;
-        if (body != null)
+        if (body != null && body.model != null)
         {
             body.model.gameObject.SetActive(true);
             body.Visible = true;
@@ -120,6 +127,7 @@ public class PlayerController : MonoBehaviour
         }
         if (cam != null)
         {
+            if (menuSavedCullingMask >= 0) cam.cullingMask = menuSavedCullingMask;
             cam.transform.SetParent(transform, false);
             cam.transform.localPosition = camHome.sqrMagnitude > 0.01f ? camHome : new Vector3(0f, 1.66f, 0f);
             cam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
@@ -232,6 +240,33 @@ public class PlayerController : MonoBehaviour
             cam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
             eye = transform.position + transform.rotation * cam.transform.localPosition;
         }
+    }
+
+    static readonly RaycastHit[] camHits = new RaycastHit[32];
+
+    /// <summary>
+    /// Swept camera probe that ignores the player and the rig they are standing
+    /// beside. Without the filter the follow arm treats the truck and trailer as
+    /// walls and snaps in every time the driver walks past their own equipment.
+    /// </summary>
+    bool CameraBlocked(Vector3 origin, float radius, Vector3 dir, float dist, out float hitDistance)
+    {
+        hitDistance = dist;
+        bool hitSomething = false;
+        int mask = ~((1 << 2) | (1 << DriverBody.Layer));
+        int n = Physics.SphereCastNonAlloc(origin, radius, dir, camHits, dist, mask, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < n; i++)
+        {
+            var c = camHits[i].collider;
+            if (c == null) continue;
+            if (c.transform.IsChildOf(transform)) continue;
+            if (c.GetComponentInParent<DriverBody>() != null) continue;
+            if (c.GetComponentInParent<TruckController>() != null) continue;
+            if (c.GetComponentInParent<TrailerRig>() != null) continue;
+            float d = camHits[i].distance <= 0f ? 0f : camHits[i].distance;
+            if (d < hitDistance) { hitDistance = d; hitSomething = true; }
+        }
+        return hitSomething;
     }
 
     Vector3 ThirdPersonCameraPosition(float yawDeg, float pitchDeg)
@@ -444,12 +479,14 @@ public class PlayerController : MonoBehaviour
             Vector3 shoulder = tpPivot + orbit * new Vector3(0.55f, 0.32f, 0f);
             Vector3 back = orbit * Vector3.back;
             float wantDist = full;
-            int mask = ~(1 << 2); // casts ignore the capsule they start inside
             // first keep the shoulder offset itself out of walls
-            if (Physics.SphereCast(tpPivot, 0.18f, (shoulder - tpPivot).normalized, out var sh, (shoulder - tpPivot).magnitude, mask, QueryTriggerInteraction.Ignore))
-                shoulder = tpPivot + (shoulder - tpPivot).normalized * Mathf.Max(0f, sh.distance - 0.05f);
-            if (Physics.SphereCast(shoulder, 0.24f, back, out var hit, full, mask, QueryTriggerInteraction.Ignore))
-                wantDist = Mathf.Max(0.35f, hit.distance - 0.06f);
+            Vector3 shDir = shoulder - tpPivot;
+            if (shDir.sqrMagnitude > 1e-6f && CameraBlocked(tpPivot, 0.18f, shDir.normalized, shDir.magnitude, out float shDist))
+                shoulder = tpPivot + shDir.normalized * Mathf.Max(0f, shDist - 0.05f);
+            // A sphere sweep against the booth, barrier arm and fence stops the
+            // camera crossing their faces, not just their pivot point.
+            if (CameraBlocked(shoulder, 0.24f, back, full, out float camDist))
+                wantDist = Mathf.Max(0.35f, camDist - 0.08f);
             if (!tpInit) { tpDist = wantDist; tpInit = true; }
             tpDist = wantDist < tpDist ? wantDist : Mathf.Lerp(tpDist, wantDist, 1f - Mathf.Exp(-3.5f * Time.deltaTime));
             cam.transform.position = shoulder + back * tpDist + bob * 0.35f;
@@ -516,8 +553,8 @@ public class PlayerController : MonoBehaviour
             // keep the chase camera out of buildings and trailers: pull in at once, ease back out
             Vector3 toCam = chasePos - pivot;
             float full = toCam.magnitude, allowed = full;
-            foreach (var h in Physics.SphereCastAll(pivot, 0.45f, toCam / Mathf.Max(0.01f, full), full, ~(1 << 2), QueryTriggerInteraction.Ignore))
-                if (h.collider != null && !h.collider.transform.IsChildOf(tr) && h.distance > 0f) allowed = Mathf.Min(allowed, h.distance - 0.1f);
+            if (full > 0.01f && CameraBlocked(pivot, 0.45f, toCam / full, full, out float chaseHit))
+                allowed = Mathf.Max(2.0f, chaseHit - 0.1f);
             if (!chaseDistInit) { chaseDist = allowed; chaseDistInit = true; }
             chaseDist = allowed < chaseDist ? allowed : Mathf.Lerp(chaseDist, allowed, 1f - Mathf.Exp(-3f * Time.deltaTime));
             chasePos = pivot + toCam / Mathf.Max(0.01f, full) * Mathf.Max(2.5f, chaseDist);

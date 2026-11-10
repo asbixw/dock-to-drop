@@ -136,8 +136,15 @@ public class GameFlow : MonoBehaviour
         // so a fresh build never starts with shadows and MSAA switched off.
         QualitySettings.shadows = ShadowQuality.All;
         QualitySettings.shadowResolution = ShadowResolution.VeryHigh;
-        QualitySettings.shadowDistance = 130f;
+        // 130 m cut the shadow cascades off just as roadside trees entered the
+        // view, so their shadows popped on and off while the truck drove. Keep a
+        // longer shadow range and a stable split; the first cascade still gets
+        // most of the resolution where the cab and gate are.
+        QualitySettings.shadowDistance = 280f;
         QualitySettings.shadowCascades = 4;
+        QualitySettings.shadowCascade4Split = new Vector3(0.067f, 0.18f, 0.42f);
+        QualitySettings.shadowProjection = ShadowProjection.StableFit;
+        QualitySettings.enableLODCrossFade = false;
         QualitySettings.antiAliasing = 4;
         QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
         QualitySettings.pixelLightCount = 6;
@@ -947,6 +954,13 @@ public class GameFlow : MonoBehaviour
         wp.gameObject.SetActive(false);
     }
 
+    Vector3? GateWaypoint()
+    {
+        if (World == null) return null;
+        if (World.gateWaypoint != null) return World.gateWaypoint.position;
+        return World.gate != null ? World.gate.transform.position + Vector3.up * 3f : (Vector3?)null;
+    }
+
     Vector3? WaypointTarget()
     {
         if (!started || ended || World == null || Truck == null) return null;
@@ -956,7 +970,7 @@ public class GameFlow : MonoBehaviour
         {
             if (!seated) return Truck.transform.TransformPoint(new Vector3(-1.95f, 1.9f, 1.55f));
             if (!Truck.engineOn) return null;
-            return World.gate != null ? World.gate.transform.position + Vector3.up * 3f : (Vector3?)null;
+            return GateWaypoint();
         }
         var rig = Rig;
         if (rig != null && rig.coupled)
@@ -969,7 +983,7 @@ public class GameFlow : MonoBehaviour
             }
             if (!seated) return Truck.transform.TransformPoint(new Vector3(-1.95f, 1.9f, 1.55f));
             if (!rig.airSupplied) return null;
-            return World.gate != null ? World.gate.transform.position + Vector3.up * 3f : (Vector3?)null;
+            return GateWaypoint();
         }
         if (InspectionDone && rig != null)
         {
@@ -1194,12 +1208,12 @@ public class GameFlow : MonoBehaviour
                     // rebuild the strings only when the shown values change (no per-frame garbage)
                     int mph = Mathf.RoundToInt(Mathf.Abs(Truck.speed) * 2.23694f);
                     int rpm50 = Truck.engineOn ? Mathf.RoundToInt(Truck.Rpm / 50f) * 50 : 0;
-                    int key = mph * 1000000 + (Truck.engineOn ? Truck.Gear + 2 : 0) * 10000 + rpm50;
+                    int key = mph * 1000000 + (Truck.GearKey + 2) * 10000 + rpm50;
                     if (key != speedoKey)
                     {
                         speedoKey = key;
                         speedText.text = mph.ToString();
-                        gearText.text = !Truck.engineOn ? "P  ·  OFF" : (Truck.Gear < 0 ? "R" : "D" + Truck.Gear) + "  ·  " + rpm50 + " RPM";
+                        gearText.text = !Truck.engineOn ? "P  ·  OFF" : Truck.GearLabel + "  ·  " + rpm50 + " RPM";
                     }
                 }
             }
@@ -1903,7 +1917,13 @@ public class GameFlow : MonoBehaviour
         cam.transform.localPosition = localPos;
         cam.transform.localRotation = localRot;
         if (hideMarkers) SetInspectionMarkers(true);
-        if (Player.body != null) { Player.body.ForceHead = false; Player.body.model.gameObject.SetActive(true); }
+        if (Player.body != null)
+        {
+            Player.body.ForceHead = false;
+            // Never resurrect the driver body while the title camera owns the
+            // view; the menu restores it in EndMenuView.
+            if (!Player.MenuView) Player.body.model.gameObject.SetActive(true);
+        }
         Player.SetUILock(false);
     }
 
@@ -1923,6 +1943,15 @@ public class GameFlow : MonoBehaviour
         Debug.Log("AUTOSHOT " + path + " exists=" + System.IO.File.Exists(path));
     }
 
+    static void AddTextShadow(Text t)
+    {
+        if (t == null || t.GetComponent<Shadow>() != null) return;
+        var s = t.gameObject.AddComponent<Shadow>();
+        s.effectColor = new Color(0f, 0f, 0f, 0.9f);
+        s.effectDistance = new Vector2(1.2f, -1.2f);
+        s.useGraphicAlpha = true;
+    }
+
     void BuildHud()
     {
         hudCanvas = UIFactory.Canvas("HUD", 20, true, true);
@@ -1939,13 +1968,18 @@ public class GameFlow : MonoBehaviour
         objectiveText.verticalOverflow = VerticalWrapMode.Truncate;
         UIFactory.TopLeft(objectiveText.rectTransform, new Vector2(18, -36), new Vector2(464, 58));
 
-        var infoPanel = UIFactory.Panel(hudRoot.transform, "Info", new Vector2(380, 100), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.55f), true, 18);
+        // The sky behind this panel is near-white at dawn; a translucent slate
+        // panel plus a text shadow keeps the controls readable without hiding
+        // the road.
+        var infoPanel = UIFactory.Panel(hudRoot.transform, "Info", new Vector2(380, 100), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.88f), true, 18);
         UIFactory.TopRight(infoPanel.rectTransform, new Vector2(24, -22), new Vector2(380, 100));
-        clockText = UIFactory.Label(infoPanel.transform, "Clock", "05:40", 36, new Color(0.85f, 0.89f, 0.92f), TextAnchor.UpperRight, FontStyle.Bold);
+        clockText = UIFactory.Label(infoPanel.transform, "Clock", "05:40", 36, new Color(0.96f, 0.98f, 1f), TextAnchor.UpperRight, FontStyle.Bold);
         UIFactory.TopRight(clockText.rectTransform, new Vector2(20, -12), new Vector2(180, 40));
+        AddTextShadow(clockText);
 
-        var controls = UIFactory.Label(infoPanel.transform, "Controls", "WASD MOVE  ·  E INTERACT  ·  TAB PHONE  ·  X EXIT", 17, new Color(0.84f, 0.88f, 0.91f), TextAnchor.UpperRight, FontStyle.Normal);
+        var controls = UIFactory.Label(infoPanel.transform, "Controls", "WASD MOVE  ·  E INTERACT  ·  TAB PHONE  ·  X EXIT", 17, new Color(0.95f, 0.97f, 0.99f), TextAnchor.UpperRight, FontStyle.Normal);
         controlsText = controls;
+        AddTextShadow(controls);
         BuildWaypoint();
         controls.horizontalOverflow = HorizontalWrapMode.Overflow;
         UIFactory.TopRight(controls.rectTransform, new Vector2(20, -60), new Vector2(330, 26));

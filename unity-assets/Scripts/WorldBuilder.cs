@@ -12,6 +12,7 @@ public class WorldRefs
     public Transform truckExit;
     public Transform driverDoor;
     public GateController gate;
+    public Transform gateWaypoint;
     public GateTrigger gateTrigger;
     public Transform container;
     public Transform targetTrailer;
@@ -205,7 +206,10 @@ public static class WorldBuilder
         l.shadows = LightShadows.Soft;
         l.shadowStrength = 0.74f;
         l.shadowResolution = LightShadowResolution.High;
-        l.shadowBias = 0.035f;
+        l.shadowBias = 0.02f;
+        // A normal bias stops the low morning sun from making two-sided leaves
+        // self-shadow into flickering dark patches as the camera moves.
+        l.shadowNormalBias = 0.35f;
         // Low morning sun from the south-west: long shadows across the apron and a
         // warm rim on the truck and trailer instead of flat overhead light.
         go.transform.rotation = Quaternion.Euler(16f, 38f, 0f);
@@ -682,7 +686,14 @@ public static class WorldBuilder
         MeshFactory.Cyl("Post", 0.07f, 3.3f, new Vector3(0, 1.65f, 0), metal, sp, false);
         var spc = sp.gameObject.AddComponent<CapsuleCollider>(); spc.radius = 0.14f; spc.height = 3.3f; spc.center = new Vector3(0f, 1.65f, 0f);
         MeshFactory.Box("Board", new Vector3(1.15f, 1.55f, 0.08f), new Vector3(0, 3.0f, 0), whitePaint, sp, false);
-        SignQuad("Speed15", "speed_15", 1.1f, 1.5f, new Vector3(0f, 3.0f, -0.05f), 0f, sp);
+        // One opaque face only. The old Sprites/Default quad was transparent and
+        // double-sided, which let the face paint itself a second time over the
+        // white backing and read as "1515".
+        var speedTex = T("speed_15");
+        if (speedTex != null)
+            MeshFactory.Quad("Speed15", new Vector2(1.1f, 1.5f), new Vector3(0f, 3.0f, -0.055f),
+                Quaternion.identity, MeshFactory.SignOpaqueMat("Speed15Mat", speedTex, Color.white), sp);
+        else Debug.LogWarning("D2D missing texture speed_15");
 
         // small mile marker
         var mm = new GameObject("MileMarker").transform; mm.SetParent(g, false); mm.position = new Vector3(-9.2f, 0, 160f);
@@ -1469,12 +1480,15 @@ public static class WorldBuilder
         var bl = boothLamp.AddComponent<Light>(); bl.type = LightType.Point; bl.range = 5.6f; bl.intensity = 1.25f;
         bl.color = new Color(1f, 0.78f, 0.50f); bl.shadows = LightShadows.None;
 
-        // Guard on the apron, facing the driver's window.
-        GuardFigure(g, OnGround(6.7f, 200.0f), 176f);
+        // Guard stands on the shoulder beside the stop line, clear of both the
+        // 14 m roadway and the booth footprint, angled toward the driver's window.
+        GuardFigure(g, OnGround(8.35f, 197.5f), 205f);
 
         // ---- barrier arm
         var pivot = new GameObject("BarrierPivot").transform; pivot.SetParent(g, false); pivot.position = new Vector3(8.55f, 1.3f, 207.2f);
-        MeshFactory.Box("BarrierArm", new Vector3(16.8f, 0.18f, 0.18f), new Vector3(-8.4f, 0, 0), whitePaint, pivot, false);
+        // Solid collider: the closed arm has to stop a truck and the chase
+        // camera, and it rotates out of the way with the pivot when opened.
+        MeshFactory.Box("BarrierArm", new Vector3(16.8f, 0.18f, 0.18f), new Vector3(-8.4f, 0, 0), whitePaint, pivot, true);
         for (int i = 0; i < 8; i++)
             MeshFactory.Box("Stripe", new Vector3(0.9f, 0.22f, 0.22f), new Vector3(-15.4f + i * 2.05f, 0, 0), orange, pivot, false);
         float barrierY = SurfaceY(new Vector3(8.55f, 0f, 207.2f));
@@ -1500,6 +1514,16 @@ public static class WorldBuilder
         // back to the driver, so it appeared as a mirrored Amazon board over the
         // warehouse. The main gantry sign already identifies the gate.)
 
+        // ---- waypoint anchor
+        // The HUD waypoint is a screen-space marker anchored to this fixed point
+        // above the gantry. It is deliberately not parented to the barrier arm:
+        // that transform swings, which is why the old "96 m" label used to ride
+        // the arm instead of staying over the gate.
+        var gateWp = new GameObject("GateWaypoint").transform;
+        gateWp.SetParent(g, false);
+        gateWp.position = new Vector3(0f, 6.2f, 205f);
+        refs.gateWaypoint = gateWp;
+
         // ---- trigger before the arm
         var trig = new GameObject("GateTrigger"); trig.transform.SetParent(g, false); trig.transform.position = new Vector3(0, 2, 188);
         var bc = trig.AddComponent<BoxCollider>(); bc.size = new Vector3(15, 5.5f, 10); bc.isTrigger = true;
@@ -1508,6 +1532,9 @@ public static class WorldBuilder
         // ---- perimeter fence along the yard
         FenceLine(g, new Vector3(-110, 0, 206.5f), new Vector3(-110, 0, 380), 3.1f);
         FenceLine(g, new Vector3(155, 0, 206.5f), new Vector3(155, 0, 380), 3.1f);
+        // Close the back of the yard. Without this a driver could leave through
+        // either side of the warehouse even though the front and sides were fenced.
+        FenceLine(g, new Vector3(-110, 0, 380), new Vector3(155, 0, 380), 3.1f);
         for (int i = 0; i < 10; i++)
             Tree(g, new Vector3(-120 + (i % 5) * 8, 0, 208 + (i / 5) * 6), 0.9f);
     }
@@ -1520,6 +1547,8 @@ public static class WorldBuilder
 
         var g = new GameObject("GateGuard").transform; g.SetParent(parent, false);
         g.position = pos; g.rotation = Quaternion.Euler(0, yaw, 0);
+        var col = g.gameObject.AddComponent<CapsuleCollider>();
+        col.radius = 0.30f; col.height = 1.85f; col.center = new Vector3(0f, 0.93f, 0f);
         for (int s = -1; s <= 1; s += 2)
         {
             MeshFactory.Box("Boot", new Vector3(0.20f, 0.16f, 0.32f), new Vector3(s * 0.14f, 0.09f, 0.06f), dark, g, false);
@@ -1919,7 +1948,9 @@ public static class WorldBuilder
         // cuts the gate corner meets the fence instead of passing through it.
         var fenceCol = g.gameObject.AddComponent<BoxCollider>();
         fenceCol.center = new Vector3(len / 2f, height * 0.5f, 0f);
-        fenceCol.size = new Vector3(len, height, 0.16f);
+        // Thick enough that a fast cab cannot tunnel through the panel between
+        // two frames, and thick enough for the camera sphere sweep to see it.
+        fenceCol.size = new Vector3(len, height, 0.45f);
     }
 
     static void SimpleRig(Transform parent, Vector3 pos, float yaw, Color bodyColor)

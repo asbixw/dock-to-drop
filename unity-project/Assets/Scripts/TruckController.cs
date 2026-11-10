@@ -95,6 +95,19 @@ public class TruckController : MonoBehaviour
     public float Steer => steerSmooth;
     public int Gear => reverse ? -1 : gear + 1;
     public float Rpm => rpm;
+    // HUD truth: R is only shown while the rig is actually rolling backwards.
+    // A latched reverse selector at a stop (or any forward motion) must not
+    // make the dashboard claim the truck is in reverse.
+    public string GearLabel
+    {
+        get
+        {
+            if (!engineOn) return "P";
+            if (reverse && speed < -0.08f) return "R";
+            return "D" + (gear + 1);
+        }
+    }
+    public int GearKey => !engineOn ? 0 : reverse && speed < -0.08f ? -1 : gear + 2;
 
     void Awake()
     {
@@ -283,6 +296,7 @@ public class TruckController : MonoBehaviour
         if (engineOn) return;
         engineOn = true;
         gear = 1; reverse = false; rpm = IdleRpm;
+        stoppedBrakeTime = 0f;
         if (audio != null) audio.StartEngine();
         if (flow != null) flow.OnEngineStarted();
     }
@@ -292,6 +306,8 @@ public class TruckController : MonoBehaviour
         if (!engineOn) return;
         engineOn = false;
         speed = 0f;
+        reverse = false;
+        stoppedBrakeTime = 0f;
         if (audio != null) audio.StopEngine();
     }
 
@@ -321,7 +337,10 @@ public class TruckController : MonoBehaviour
         if (Mathf.Abs(speed) < 0.2f)
         {
             if (!reverse && brakeIn > 0.5f) { stoppedBrakeTime += dt; if (stoppedBrakeTime > 0.45f) { reverse = true; stoppedBrakeTime = 0f; } }
-            else if (reverse && throttleIn > 0.5f) { stoppedBrakeTime += dt; if (stoppedBrakeTime > 0.45f) { reverse = false; stoppedBrakeTime = 0f; } }
+            // Pressing the accelerator in reverse means the driver wants D now,
+            // not in half a second: clear R immediately so the HUD and the
+            // throttle agree from the first frame.
+            else if (reverse && throttleIn > 0.5f) { reverse = false; stoppedBrakeTime = 0f; }
             else stoppedBrakeTime = 0f;
         }
         else stoppedBrakeTime = 0f;
