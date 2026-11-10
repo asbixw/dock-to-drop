@@ -1160,11 +1160,14 @@ public class GameFlow : MonoBehaviour
         }
         if (InspectionDone && rig != null)
         {
-            // line up in front of the nose
+            // line up in front of the nose, but keep the marker off the trailer
+            // body so it never reads as a decal on the rig
             if (!seated) return Truck.transform.TransformPoint(new Vector3(-1.95f, 1.9f, 1.55f));
-            return rig.KingpinWorld + rig.Forward * 9f + Vector3.up * 2.5f;
+            return rig.KingpinWorld + rig.Forward * 9f + rig.transform.right * 2.8f + Vector3.up * 1.2f;
         }
-        if (seated) return World.targetTrailer != null ? World.targetTrailer.position + Vector3.up * 4.5f : (Vector3?)null;
+        if (seated) return World.targetTrailer != null
+            ? World.targetTrailer.position + World.targetTrailer.right * 3.2f + Vector3.up * 1.2f
+            : (Vector3?)null;
         foreach (var ip in World.inspections)
             if (ip != null && !ip.inspected) return ip.transform.position + Vector3.up * 0.6f;
         return null;
@@ -1196,6 +1199,9 @@ public class GameFlow : MonoBehaviour
         if (vp.z < 0f) { vp.x = 1f - vp.x; vp.y = 1f - vp.y; vp.y = 0.08f; }
         vp.x = Mathf.Clamp(vp.x, 0.04f, 0.96f);
         vp.y = Mathf.Clamp(vp.y, 0.08f, 0.9f);
+        // Keep the marker and its distance label clear of the TAB PHONE hint
+        // in the lower-right corner.
+        if (vp.x > 0.72f && vp.y < 0.18f) { vp.x = 0.72f; vp.y = 0.18f; }
         var canvasRt = (RectTransform)hudRoot.transform;
         waypoint.anchoredPosition = new Vector2(vp.x * canvasRt.rect.width, vp.y * canvasRt.rect.height);
         int m = Mathf.RoundToInt(dist);
