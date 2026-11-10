@@ -84,6 +84,20 @@ public static class WorldBuilder
         return refs;
     }
 
+    // Materials can be missing when a shader is stripped from a build; never
+    // dereference one blindly.
+    static void Tint(Material m, Color c)
+    {
+        if (m == null) return;
+        if (m.HasProperty("_Color")) m.color = c;
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
+    }
+
+    static void Bump(Material m, float scale)
+    {
+        if (m != null && m.HasProperty("_BumpScale")) m.SetFloat("_BumpScale", scale);
+    }
+
     static Texture2D T(string n) { return Resources.Load<Texture2D>("Textures/" + n); }
 
     static Texture2D shadowBlob;
@@ -130,30 +144,30 @@ public static class WorldBuilder
         // The bump is deliberately gentle; a strong normal at this tiling turns
         // the apron into a field of glittering gravel.
         asphalt = MeshFactory.TexMat("Asphalt", asphaltD, asphaltNrm, new Vector2(4f, 56f), 0.06f);
-        asphalt.color = new Color(1f, 1f, 1f);
-        asphalt.SetFloat("_BumpScale", 0.34f);
+        Tint(asphalt, new Color(1f, 1f, 1f));
+        Bump(asphalt, 0.34f);
         yardAsphalt = MeshFactory.TexMat("YardAsphalt", asphaltD, asphaltNrm, new Vector2(5f, 30f), 0.08f);
-        yardAsphalt.color = new Color(1.04f, 1.02f, 0.98f);
-        yardAsphalt.SetFloat("_BumpScale", 0.34f);
+        Tint(yardAsphalt, new Color(1.04f, 1.02f, 0.98f));
+        Bump(yardAsphalt, 0.34f);
         yardConcrete = MeshFactory.TexMat("YardConcrete", concD, concNrm, new Vector2(64f, 40f), 0.10f);
-        yardConcrete.color = new Color(1f, 1f, 1f);
-        yardConcrete.SetFloat("_BumpScale", 0.20f);
+        Tint(yardConcrete, new Color(1f, 1f, 1f));
+        Bump(yardConcrete, 0.20f);
         lotConcrete = MeshFactory.TexMat("LotConcrete", concD, concNrm, new Vector2(9f, 8f), 0.10f);
-        lotConcrete.color = new Color(0.98f, 0.98f, 0.97f);
-        lotConcrete.SetFloat("_BumpScale", 0.20f);
+        Tint(lotConcrete, new Color(0.98f, 0.98f, 0.97f));
+        Bump(lotConcrete, 0.20f);
         lotAsphalt = MeshFactory.TexMat("LotAsphalt", asphaltD, asphaltNrm, new Vector2(30f, 27f), 0.07f);
-        lotAsphalt.color = new Color(1.0f, 1.0f, 1.0f);
-        lotAsphalt.SetFloat("_BumpScale", 0.40f);
+        Tint(lotAsphalt, new Color(1.0f, 1.0f, 1.0f));
+        Bump(lotAsphalt, 0.40f);
         dockConcrete = MeshFactory.TexMat("DockConcrete", concD, concNrm, new Vector2(64f, 6f), 0.10f);
-        dockConcrete.color = new Color(1f, 1f, 1f);
-        dockConcrete.SetFloat("_BumpScale", 0.20f);
+        Tint(dockConcrete, new Color(1f, 1f, 1f));
+        Bump(dockConcrete, 0.20f);
         dirt = MeshFactory.TexMat("Dirt", T("dirt_hq"), null, new Vector2(120f, 120f), 0.04f);
-        dirt.color = new Color(1.0f, 0.98f, 0.94f);
+        Tint(dirt, new Color(1.0f, 0.98f, 0.94f));
         grass = MeshFactory.TexMat("Grass", T("grass_hq"), null, new Vector2(3f, 72f), 0.03f);
-        grass.color = new Color(0.92f, 0.97f, 0.88f);
+        Tint(grass, new Color(0.92f, 0.97f, 0.88f));
 
         siding = MeshFactory.TexMat("WarehouseSiding", T("warehouse_siding"), T("warehouse_siding_normal"), new Vector2(44f, 12f), 0.30f);
-        siding.color = new Color(0.60f, 0.62f, 0.64f);
+        Tint(siding, new Color(0.60f, 0.62f, 0.64f));
         warehouseBase = MeshFactory.Mat("WarehouseBase", new Color(0.31f, 0.32f, 0.32f), 0f, 0.10f, T("concrete_floor_02_Diffuse"), null, new Vector2(16f, 2f));
 
         joint = MeshFactory.Mat("ConcreteJoint", new Color(0.36f, 0.37f, 0.38f), 0f, 0.28f);
@@ -171,7 +185,7 @@ public static class WorldBuilder
         glass = MeshFactory.GlassMat("Glass");
         orange = MeshFactory.Mat("Orange", new Color(0.95f, 0.37f, 0.05f), 0.05f, 0.48f);
         orangeGlow = MeshFactory.Mat("OrangeGlow", new Color(1f, 0.35f, 0.02f), 0f, 0.3f);
-        orangeGlow.EnableKeyword("_EMISSION"); orangeGlow.SetColor("_EmissionColor", new Color(1f, 0.28f, 0.02f) * 2.4f);
+        if (orangeGlow != null) { orangeGlow.EnableKeyword("_EMISSION"); orangeGlow.SetColor("_EmissionColor", new Color(1f, 0.28f, 0.02f) * 2.4f); }
         blue = MeshFactory.Mat("AmazonBlue", new Color(0.020f, 0.075f, 0.155f), 0.3f, 0.40f);
         navy = MeshFactory.Mat("Navy", new Color(0.010f, 0.030f, 0.058f), 0.25f, 0.44f);
         red = MeshFactory.Mat("Red", new Color(0.52f, 0.025f, 0.015f), 0.1f, 0.38f);
@@ -198,7 +212,9 @@ public static class WorldBuilder
         }
         if (hdr == null)
         {
-            var sky = new Material(Shader.Find("Skybox/Procedural"));
+            var skyShader = MeshFactory.SafeShader("Skybox/Procedural", "Skybox/Panoramic");
+            if (skyShader == null) return;
+            var sky = new Material(skyShader);
             sky.SetColor("_SkyTint", new Color(0.34f, 0.49f, 0.68f));
             sky.SetColor("_GroundColor", new Color(0.12f, 0.11f, 0.10f));
             sky.SetFloat("_AtmosphereThickness", 1.15f);
@@ -317,8 +333,8 @@ public static class WorldBuilder
         float len = Mathf.Max(1f, end - start);
         var g = new GameObject("Highway").transform; g.SetParent(root, false);
         var hwAsphalt = MeshFactory.TexMat("HighwayAsphalt", asphaltD, T("asphalt_hq_n"), new Vector2(4f, len / 4f), 0.06f);
-        hwAsphalt.color = new Color(1f, 1f, 1f);
-        hwAsphalt.SetFloat("_BumpScale", 0.34f);
+        Tint(hwAsphalt, new Color(1f, 1f, 1f));
+        Bump(hwAsphalt, 0.34f);
         var hwShoulder = MeshFactory.TexMat("HighwayShoulder", concD, T("concrete_hq_n"), new Vector2(2f, len / 3f), 0.10f);
         var hwDirt = MeshFactory.Mat("HighwayDirt", new Color(0.56f, 0.50f, 0.40f), 0f, 0.06f);
         var centre = MeshFactory.Mat("HighwayCentre", new Color(0.82f, 0.66f, 0.22f), 0f, 0.34f);
@@ -820,7 +836,7 @@ public static class WorldBuilder
         ApplyTruckMaterials(model);
         AddContactShadow(truckRoot, new Vector3(0f, 0.19f, -1.65f), new Vector2(3.3f, 10.4f));
         door = FindDeep(model.transform, "DriverDoor");
-        Debug.Log("D2D glass shader=" + glass.shader.name + " found=" + (Shader.Find("DockToDrop/Glass") != null));
+        Debug.Log("D2D glass shader=" + (glass != null && glass.shader != null ? glass.shader.name : "none") + " found=" + (Shader.Find("DockToDrop/Glass") != null));
         UpgradeCabInterior(truckRoot, model, door);
 
         // The v4 FBX now carries the bumper, air dam, plate, mud flaps, tank

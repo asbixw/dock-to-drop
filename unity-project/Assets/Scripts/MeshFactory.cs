@@ -4,12 +4,48 @@ using System.Collections.Generic;
 
 public static class MeshFactory
 {
+    // Shader.Find returns null in a player build when the shader was stripped.
+    // Picking the first shader that exists keeps every material creation safe;
+    // a null shader throws ArgumentNullException and kills the frame.
+    public static Shader SafeShader(params string[] names)
+    {
+        for (int i = 0; i < names.Length; i++)
+        {
+            var s = Shader.Find(names[i]);
+            if (s != null) return s;
+        }
+        Debug.LogWarning("D2D no shader found (" + string.Join(", ", names) + ")");
+        // Never hand a null shader to Material: that throws. Fall back through
+        // the shaders most likely to survive a player build, then the built-in
+        // error shader, which is magenta but survivable.
+        var fallback = Shader.Find("Unlit/Color");
+        if (fallback == null) fallback = Shader.Find("Sprites/Default");
+        if (fallback == null) fallback = Shader.Find("Hidden/InternalErrorShader");
+        return fallback;
+    }
+
+    // A material that is always safe to hand to a renderer.
+    public static Material FallbackMaterial(string name)
+    {
+        var sh = SafeShader("Standard", "Unlit/Color");
+        if (sh == null) return null;
+        return new Material(sh) { name = name };
+    }
+
+    // Never hand a null material to a renderer or dereference one.
+    public static Material Ensure(Material m, string name)
+    {
+        if (m != null) return m;
+        var f = FallbackMaterial(name);
+        if (f == null) Debug.LogWarning("D2D material missing: " + name);
+        return f;
+    }
+
     public static Material Mat(string name, Color color, float metallic = 0f, float smoothness = 0.45f,
         Texture2D albedo = null, Texture2D normal = null, Vector2 tiling = default(Vector2))
     {
-        var shader = Shader.Find("Standard");
-        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) shader = Shader.Find("Unlit/Color");
+        var shader = SafeShader("Standard", "Universal Render Pipeline/Lit", "Unlit/Color");
+        if (shader == null) return null;
         var m = new Material(shader) { name = name };
         if (m.HasProperty("_Color")) m.color = color;
         if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
@@ -36,6 +72,7 @@ public static class MeshFactory
     public static Material TexMat(string name, Texture2D albedo, Texture2D normal, Vector2 tiling, float smoothness = 0.3f)
     {
         var m = Mat(name, Color.white, 0f, smoothness, albedo, normal, tiling);
+        if (m == null) return null;
         if (normal != null)
         {
             m.SetTextureScale("_BumpMap", tiling);
@@ -46,6 +83,7 @@ public static class MeshFactory
     public static Material TransparentMat(string name, Color color, float smoothness = 0.95f)
     {
         var m = Mat(name, color, 0f, smoothness);
+        if (m == null) return null;
         m.SetFloat("_Mode", 3f);
         m.SetOverrideTag("RenderType", "Transparent");
         m.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
@@ -78,9 +116,8 @@ public static class MeshFactory
 
     public static Material SignMat(string name, Texture2D tex, Color tint)
     {
-        var sh = Shader.Find("Sprites/Default");
-        if (sh == null) sh = Shader.Find("Unlit/Transparent");
-        if (sh == null) sh = Shader.Find("Standard");
+        var sh = SafeShader("Sprites/Default", "Unlit/Transparent", "Standard");
+        if (sh == null) return null;
         var m = new Material(sh) { name = name };
         if (m.HasProperty("_MainTex")) m.mainTexture = tex;
         if (m.HasProperty("_Color")) m.color = tint;
@@ -93,9 +130,8 @@ public static class MeshFactory
     // face to be composited more than once (the doubled "1515" report).
     public static Material SignOpaqueMat(string name, Texture2D tex, Color tint)
     {
-        var sh = Shader.Find("Unlit/Texture");
-        if (sh == null) sh = Shader.Find("Standard");
-        if (sh == null) sh = Shader.Find("Unlit/Color");
+        var sh = SafeShader("Unlit/Texture", "Standard", "Unlit/Color");
+        if (sh == null) return null;
         var m = new Material(sh) { name = name };
         if (m.HasProperty("_MainTex")) m.mainTexture = tex;
         if (m.HasProperty("_Color")) m.color = tint;
@@ -112,7 +148,7 @@ public static class MeshFactory
         go.transform.localPosition = pos;
         go.transform.localScale = size;
         var mr = go.GetComponent<MeshRenderer>();
-        mr.sharedMaterial = mat;
+        mr.sharedMaterial = Ensure(mat, name);
         if (!collider) Object.Destroy(go.GetComponent<BoxCollider>());
         return go;
     }
@@ -131,7 +167,7 @@ public static class MeshFactory
         go.transform.SetParent(parent, false);
         go.transform.localPosition = pos;
         go.transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
-        go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+        go.GetComponent<MeshRenderer>().sharedMaterial = Ensure(mat, name);
         if (!collider) Object.Destroy(go.GetComponent<CapsuleCollider>());
         return go;
     }
@@ -150,7 +186,7 @@ public static class MeshFactory
         go.transform.SetParent(parent, false);
         go.transform.localPosition = pos;
         go.transform.localScale = Vector3.one * radius * 2f;
-        go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+        go.GetComponent<MeshRenderer>().sharedMaterial = Ensure(mat, name);
         Object.Destroy(go.GetComponent<SphereCollider>());
         return go;
     }
@@ -195,7 +231,7 @@ public static class MeshFactory
         mesh.vertices = verts; mesh.normals = norms; mesh.uv = uv; mesh.triangles = tris;
         mesh.RecalculateBounds();
         go.AddComponent<MeshFilter>().sharedMesh = mesh;
-        go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+        go.AddComponent<MeshRenderer>().sharedMaterial = Ensure(mat, name);
         return go;
     }
 
@@ -208,7 +244,7 @@ public static class MeshFactory
         go.transform.localRotation = rot;
         go.transform.localScale = new Vector3(size.x, size.y, 1);
         var mr = go.GetComponent<MeshRenderer>();
-        mr.sharedMaterial = mat;
+        mr.sharedMaterial = Ensure(mat, name);
         mr.shadowCastingMode = ShadowCastingMode.Off;
         mr.receiveShadows = false;
         Object.Destroy(go.GetComponent<MeshCollider>());
@@ -312,7 +348,7 @@ public static class MeshFactory
         m.SetVertices(verts); m.SetUVs(0, uvs); m.SetTriangles(tris, 0);
         m.RecalculateNormals(); m.RecalculateBounds();
         go.AddComponent<MeshFilter>().sharedMesh = m;
-        var r = go.AddComponent<MeshRenderer>(); r.sharedMaterial = mat;
+        var r = go.AddComponent<MeshRenderer>(); r.sharedMaterial = Ensure(mat, name);
         return go;
     }
 
@@ -371,7 +407,7 @@ public static class MeshFactory
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
         go.AddComponent<MeshFilter>().sharedMesh = m;
-        go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+        go.AddComponent<MeshRenderer>().sharedMaterial = Ensure(mat, name);
         return go;
     }
 

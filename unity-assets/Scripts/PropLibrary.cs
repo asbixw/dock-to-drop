@@ -147,7 +147,9 @@ public static class PropLibrary
         if (leafy)
         {
             if (foliage == null) foliage = Shader.Find("DockToDrop/Foliage");
-            m = new Material(foliage != null ? foliage : Shader.Find("Standard")) { name = n };
+            var fshader = foliage != null ? foliage : MeshFactory.SafeShader("Standard", "Unlit/Color");
+            if (fshader == null) return null;
+            m = new Material(fshader) { name = n };
             if (diff != null) m.SetTexture("_MainTex", diff);
             if (nor != null) m.SetTexture("_BumpMap", nor);
             m.SetFloat("_Glossiness", 0.22f);
@@ -156,7 +158,9 @@ public static class PropLibrary
         }
         else
         {
-            m = new Material(Shader.Find("Standard")) { name = n };
+            var bshader = MeshFactory.SafeShader("Standard", "Unlit/Color");
+            if (bshader == null) return null;
+            m = new Material(bshader) { name = n };
             if (diff != null) m.mainTexture = diff;
             if (nor != null) { m.EnableKeyword("_NORMALMAP"); m.SetTexture("_BumpMap", nor); }
             if (msk != null)
@@ -184,8 +188,10 @@ public static class PropLibrary
         float P(int i) { return i < f.Length && float.TryParse(f[i], System.Globalization.NumberStyles.Float, inv, out var v) ? v : 1f; }
         string kind = f.Length > 6 ? f[6] : "opaque";
         kinds[n] = kind;
-        if (kind == "glass") { var g = MeshFactory.GlassMat(n); g.name = n; return g; }
-        var m = new Material(Shader.Find("Standard")) { name = n };
+        if (kind == "glass") { var g = MeshFactory.GlassMat(n); if (g == null) return null; g.name = n; return g; }
+        var mshader = MeshFactory.SafeShader("Standard", "Unlit/Color");
+        if (mshader == null) return null;
+        var m = new Material(mshader) { name = n };
         m.color = new Color(P(0), P(1), P(2), 1f).gamma;
         m.SetFloat("_Metallic", Mathf.Clamp01(P(4)));
         m.SetFloat("_Glossiness", Mathf.Clamp(P(5), 0f, 0.92f));
