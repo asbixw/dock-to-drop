@@ -351,6 +351,14 @@ public static class WorldBuilder
         // same point the odometer measures to. (The old countdown started one
         // mile high, so the board a mile out read "2 MI" and one sat at the gate.)
         float gateFaceZ = destOffset + GateTriggerZ - GateTriggerHalf;
+        // "AMAZON DFW9 / 2 MILES" guide sign, placed two real miles before the
+        // gate. It used to stand 126 m from the start of a 32/60-mile deadhead.
+        var hs = new GameObject("HighwaySign").transform; hs.SetParent(g, false); hs.position = new Vector3(14f, 0, Mathf.Max(start + 100f, gateFaceZ - 2f * 1609.344f));   // posts clear of the 3 m shoulder
+        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, true);
+        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, true);
+        MeshFactory.Box("SignPanel", new Vector3(8.1f, 2.9f, 0.16f), new Vector3(0, 4.2f, 0), green, hs, false);
+        SignQuad("HighwaySignTex", "highway_sign", 7.7f, 2.55f, new Vector3(0f, 4.2f, -0.10f), 0f, hs);
+
         int miles = Mathf.Max(1, Mathf.RoundToInt((end - start) / 1609.344f));
         for (int mi = 1; mi <= miles; mi++)
         {
@@ -539,6 +547,23 @@ public static class WorldBuilder
             if (Mathf.Abs(x) < 14.5f) continue;   // keep the gate approach clear
             MeshFactory.Sphere("Scrub", 1.4f + (i % 4) * 0.22f, new Vector3(x, 0.55f, 208 + (i % 2) * 2f), green, g);
         }
+
+        // Speed limit 15 on the gate approach, set back from the lane so it
+        // doesn't block the booth. It used to stay beside the travel center
+        // when the gate moved to the end of the deadhead.
+        var sp = new GameObject("SpeedSign").transform; sp.SetParent(g, false); sp.localPosition = new Vector3(-10.4f, 0, 191f);
+        MeshFactory.Cyl("Post", 0.07f, 3.3f, new Vector3(0, 1.65f, 0), metal, sp, false);
+        var spc = sp.gameObject.AddComponent<CapsuleCollider>(); spc.radius = 0.14f; spc.height = 3.3f; spc.center = new Vector3(0f, 1.65f, 0f);
+        MeshFactory.Box("Board", new Vector3(1.15f, 1.55f, 0.08f), new Vector3(0, 3.0f, 0), whitePaint, sp, false);
+        // One opaque face only. The old Sprites/Default quad was transparent and
+        // double-sided, which let the face paint itself a second time over the
+        // white backing and read as "1515".
+        var speedTex = T("speed_15");
+        if (speedTex != null)
+            MeshFactory.Quad("Speed15", new Vector2(1.1f, 1.5f), new Vector3(0f, 3.0f, -0.055f),
+                Quaternion.identity, MeshFactory.SignOpaqueMat("Speed15Mat", speedTex, Color.white), sp);
+        else Debug.LogWarning("D2D missing texture speed_15");
+
     }
 
     static void ParkedTrailer(Transform parent, Vector3 pos, float yaw, bool hasLogo)
@@ -771,27 +796,6 @@ public static class WorldBuilder
                         wire.transform.localRotation = Quaternion.LookRotation(b - a);
                     }
         }
-
-        // highway sign with Amazon DFW9
-        var hs = new GameObject("HighwaySign").transform; hs.SetParent(g, false); hs.position = new Vector3(12.5f, 0, 126f);
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, true);
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, true);
-        MeshFactory.Box("SignPanel", new Vector3(8.1f, 2.9f, 0.16f), new Vector3(0, 4.2f, 0), green, hs, false);
-        SignQuad("HighwaySignTex", "highway_sign", 7.7f, 2.55f, new Vector3(0f, 4.2f, -0.10f), 0f, hs);
-
-        // speed limit 15, set back from the gate lane so it doesn't block the booth
-        var sp = new GameObject("SpeedSign").transform; sp.SetParent(g, false); sp.position = new Vector3(-10.4f, 0, 191f);
-        MeshFactory.Cyl("Post", 0.07f, 3.3f, new Vector3(0, 1.65f, 0), metal, sp, false);
-        var spc = sp.gameObject.AddComponent<CapsuleCollider>(); spc.radius = 0.14f; spc.height = 3.3f; spc.center = new Vector3(0f, 1.65f, 0f);
-        MeshFactory.Box("Board", new Vector3(1.15f, 1.55f, 0.08f), new Vector3(0, 3.0f, 0), whitePaint, sp, false);
-        // One opaque face only. The old Sprites/Default quad was transparent and
-        // double-sided, which let the face paint itself a second time over the
-        // white backing and read as "1515".
-        var speedTex = T("speed_15");
-        if (speedTex != null)
-            MeshFactory.Quad("Speed15", new Vector2(1.1f, 1.5f), new Vector3(0f, 3.0f, -0.055f),
-                Quaternion.identity, MeshFactory.SignOpaqueMat("Speed15Mat", speedTex, Color.white), sp);
-        else Debug.LogWarning("D2D missing texture speed_15");
 
         // small mile marker
         var mm = new GameObject("MileMarker").transform; mm.SetParent(g, false); mm.position = new Vector3(-9.2f, 0, 160f);
