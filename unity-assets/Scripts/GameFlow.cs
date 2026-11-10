@@ -2127,7 +2127,7 @@ public class GameFlow : MonoBehaviour
     void BuildBackingLesson()
     {
         var bp = UIFactory.Panel(hudRoot.transform, "BackingLesson", new Vector2(780, 196), Vector2.zero, new Color(0.025f, 0.04f, 0.06f, 0.92f), true, 18);
-        UIFactory.BottomCenter(bp.rectTransform, new Vector2(0, 156), new Vector2(780, 196));
+        UIFactory.BottomCenter(bp.rectTransform, new Vector2(0, 224), new Vector2(780, 196));
         backingPanel = bp.gameObject;
 
         backingText = UIFactory.Label(bp.transform, "Text", "BACKING LESSON", 20, new Color(1f, 0.55f, 0.16f), TextAnchor.UpperLeft, FontStyle.Bold);
@@ -2283,14 +2283,15 @@ public class GameFlow : MonoBehaviour
         // real UI (the sensitivity buttons) blocks that click.
         dim.raycastTarget = false;
         pausePanel = dim.gameObject;
-        var box = UIFactory.Panel(dim.transform, "Box", new Vector2(600, 320), Vector2.zero, new Color(0.035f, 0.05f, 0.065f, 0.98f), true, 22);
+        var box = UIFactory.Panel(dim.transform, "Box", new Vector2(620, 340), Vector2.zero, new Color(0.035f, 0.05f, 0.065f, 0.98f), true, 22);
+        box.raycastTarget = false;
         box.rectTransform.anchorMin = box.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
         box.rectTransform.anchoredPosition = Vector2.zero;
         var title = UIFactory.Label(box.rectTransform, "Title", "PAUSED", 48, new Color(0.96f, 0.95f, 0.90f), TextAnchor.MiddleCenter, FontStyle.Bold);
         title.rectTransform.anchorMin = title.rectTransform.anchorMax = new Vector2(0.5f, 1);
         title.rectTransform.pivot = new Vector2(0.5f, 1);
-        title.rectTransform.anchoredPosition = new Vector2(0, -24);
-        title.rectTransform.sizeDelta = new Vector2(540, 60);
+        title.rectTransform.anchoredPosition = new Vector2(0, -14);
+        title.rectTransform.sizeDelta = new Vector2(560, 56);
         var sub = UIFactory.Label(box.rectTransform, "Sub", "CLICK TO RESUME", 26, new Color(1f, 0.62f, 0.24f), TextAnchor.MiddleCenter, FontStyle.Bold);
         sub.rectTransform.anchorMin = sub.rectTransform.anchorMax = new Vector2(0.5f, 0);
         sub.rectTransform.pivot = new Vector2(0.5f, 0);
@@ -2298,22 +2299,22 @@ public class GameFlow : MonoBehaviour
         sub.rectTransform.sizeDelta = new Vector2(540, 40);
         var note = UIFactory.Label(box.rectTransform, "Note", "Escape and right-click release the mouse. Click anywhere to take the controls again.", 17, new Color(0.62f, 0.72f, 0.78f), TextAnchor.MiddleCenter);
         note.rectTransform.anchorMin = note.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-        note.rectTransform.anchoredPosition = new Vector2(0, -20);
-        note.rectTransform.sizeDelta = new Vector2(540, 50);
+        note.rectTransform.anchoredPosition = new Vector2(0, -2);
+        note.rectTransform.sizeDelta = new Vector2(560, 44);
 
         sensitivityText = UIFactory.Label(box.rectTransform, "Sensitivity", "MOUSE SENSITIVITY  2.0", 22, new Color(0.92f, 0.95f, 0.97f), TextAnchor.MiddleCenter, FontStyle.Bold);
         sensitivityText.rectTransform.anchorMin = sensitivityText.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
         sensitivityText.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        sensitivityText.rectTransform.anchoredPosition = new Vector2(0, -82);
-        sensitivityText.rectTransform.sizeDelta = new Vector2(540, 34);
+        sensitivityText.rectTransform.anchoredPosition = new Vector2(0, -92);
+        sensitivityText.rectTransform.sizeDelta = new Vector2(560, 32);
         var minus = UIFactory.Button(box.rectTransform, "SensMinus", "-", new Vector2(76, 50), Vector2.zero, new Color(0.10f, 0.16f, 0.20f), Color.white, 26, () => ChangeSensitivity(-0.2f));
         minus.GetComponent<RectTransform>().anchorMin = minus.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0.5f);
         minus.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 0.5f);
-        minus.GetComponent<RectTransform>().anchoredPosition = new Vector2(-90, -146);
+        minus.GetComponent<RectTransform>().anchoredPosition = new Vector2(-90, -140);
         var plus = UIFactory.Button(box.rectTransform, "SensPlus", "+", new Vector2(76, 50), Vector2.zero, new Color(0.10f, 0.16f, 0.20f), Color.white, 26, () => ChangeSensitivity(0.2f));
         plus.GetComponent<RectTransform>().anchorMin = plus.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0.5f);
         plus.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 0.5f);
-        plus.GetComponent<RectTransform>().anchoredPosition = new Vector2(90, -146);
+        plus.GetComponent<RectTransform>().anchoredPosition = new Vector2(90, -140);
 
         pausePanel.SetActive(false);
     }
@@ -2378,11 +2379,11 @@ public class GameFlow : MonoBehaviour
         endTime = Stat(panel.rectTransform, 380, "SHIFT TIME", "7:42", "READY TO ROLL", new Color(0.83f, 0.90f, 0.94f));
 
         var note = UIFactory.Label(panel.rectTransform, "Note", "LOAD #D2D-0612   ·   DFW9 → DWH1   ·   240 MI   ·   $2,450", 26, new Color(0.68f, 0.77f, 0.83f), TextAnchor.UpperLeft);
-        UIFactory.TopLeft(note.rectTransform, new Vector2(54, -478), new Vector2(1080, 38));
+        UIFactory.TopLeft(note.rectTransform, new Vector2(54, -492), new Vector2(1080, 38));
         endNote = note;
 
         var debrief = UIFactory.Label(panel.rectTransform, "Debrief", "", 16, new Color(0.80f, 0.88f, 0.93f), TextAnchor.UpperLeft);
-        UIFactory.TopLeft(debrief.rectTransform, new Vector2(54, -420), new Vector2(1080, 58));
+        UIFactory.TopLeft(debrief.rectTransform, new Vector2(54, -420), new Vector2(1080, 64));
         endDebrief = debrief;
 
         var b = UIFactory.Button(panel.rectTransform, "Restart", "DRIVE AGAIN", new Vector2(470, 88), Vector2.zero, new Color(1f, 0.48f, 0.10f), new Color(0.12f, 0.07f, 0.02f), 30, Restart);
