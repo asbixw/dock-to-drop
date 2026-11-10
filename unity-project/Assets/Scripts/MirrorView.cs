@@ -58,6 +58,8 @@ public class MirrorView : MonoBehaviour
         var mr = GetComponent<MeshRenderer>();
         if (mr == null) Debug.LogWarning("D2D MIRROR no MeshRenderer on " + name);
         else mr.sharedMaterial = mat;
+        Debug.Log("D2D MIRROR " + name + " shader=" + shader.name + " rt=" + (rt != null && rt.IsCreated())
+            + " texAssigned=" + (mat != null && mat.mainTexture == rt));
     }
 
     void LateUpdate()

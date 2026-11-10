@@ -456,8 +456,11 @@ public class GameFlow : MonoBehaviour
         // it still running is a real procedure miss, so log it for the debrief.
         if (Truck != null && Truck.ExitLeftEngineRunning)
         {
-            engineRunningExits++;
-            ShowWarning("Engine was still running. Shut it down and set the brake before leaving the cab.", 3.5f, 1);
+            if (!IsAutomation)
+            {
+                engineRunningExits++;
+                ShowWarning("Engine was still running. Shut it down and set the brake before leaving the cab.", 3.5f, 1);
+            }
         }
         // the door is shut behind the driver; one press opens it and climbs back in
         if (doorCol != null) doorCol.enabled = true;
@@ -745,7 +748,7 @@ public class GameFlow : MonoBehaviour
         guardPanel.SetActive(true);
         if (Player != null) Player.SetUILock(true);
         if (mobileControls != null && mobileControls.canvas != null) mobileControls.canvas.gameObject.SetActive(false);
-        guardText.text = "Morning, driver. I need your appointment time, the shipper, and the seal number before I raise this arm.";
+        guardText.text = "GATE KIOSK  ·  Enter the load number, trailer and seal.  PLACEHOLDER: kiosk fields and validation rules - confirm with the site.";
         SetObjective("Check in at Gate 1.");
     }
 
@@ -755,7 +758,7 @@ public class GameFlow : MonoBehaviour
         if (!correct)
         {
             guardWrongAttempts++;
-            guardText.text = "That's not what's on my sheet. Check the load app and give me the correct appointment and shipper.";
+            guardText.text = "The kiosk rejected those details. Check Relay and re-enter the load number, trailer and seal.";
             Audio.PlayVoice("guard_01");
             return;
         }
@@ -1194,6 +1197,19 @@ public class GameFlow : MonoBehaviour
         float reach = Interaction != null ? Interaction.distance : 3.4f;
         // hide once the goal is within reach of the driver
         bool show = dist > (seated ? 14f : reach);
+        // If the rig is between the camera and the goal, the marker would draw
+        // on the trailer body. Hide it instead.
+        var rig = Rig;
+        if (show && rig != null)
+        {
+            Vector3 lookDir = t.Value - Camera.transform.position;
+            float lookDist = lookDir.magnitude;
+            if (lookDist > 0.5f && Physics.Raycast(Camera.transform.position, lookDir / lookDist,
+                out RaycastHit hit, lookDist, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.collider.transform.IsChildOf(rig.transform)) show = false;
+            }
+        }
         if (waypoint.gameObject.activeSelf != show) waypoint.gameObject.SetActive(show);
         if (!show) return;
         if (vp.z < 0f) { vp.x = 1f - vp.x; vp.y = 1f - vp.y; vp.y = 0.08f; }
@@ -1267,7 +1283,7 @@ public class GameFlow : MonoBehaviour
         {
             tripKicker.text = "DEADHEAD COMPLETE · RNO-PLACEHOLDER";
             tripMiles.text = deadheadMiles.ToString("F2") + " MI";
-            tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI · ASSIGNED " + DeadheadAssignedMiles + " MI";
+            tripDetail.text = "ROUTE " + DeadheadRouteMiles.ToString("F2") + " / " + DeadheadAssignedMiles + " MI";
             tripEta.text = "ODOMETER = DISTANCE ACTUALLY DRIVEN";
             return;
         }
@@ -1276,7 +1292,7 @@ public class GameFlow : MonoBehaviour
         tripRefresh = 0.12f;
         tripKicker.text = "DEADHEAD · RNO-PLACEHOLDER";
         tripMiles.text = deadheadMiles.ToString("F2") + " MI";
-        tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI OF " + DeadheadAssignedMiles + " ASSIGNED";
+        tripDetail.text = "ROUTE " + DeadheadRouteMiles.ToString("F2") + " / " + DeadheadAssignedMiles + " MI";
         tripEta.text = "DEP " + deadheadDepartClock + " · ETA " + DeadheadEta + " · 1 UNIT = 1 M";
     }
 
@@ -1819,7 +1835,7 @@ public class GameFlow : MonoBehaviour
         // distance): 20x makes a 32/60-mile run finish in a few minutes while
         // the odometer still integrates every metre.
         Time.timeScale = 20f;
-        float routeSeconds = DeadheadRouteMiles / DeadheadMph * 3600f;
+        float routeSeconds = DeadheadRouteMiles / 24f * 3600f * 1.15f + 60f;
         float gateT0 = Time.time;
         float nextTripLog = 0f;
         while (!guardOpen && !ended && Time.time - gateT0 < routeSeconds + 20f)
@@ -2119,7 +2135,16 @@ public class GameFlow : MonoBehaviour
         {
             Player.body.ForceHead = true;
             // only the driver shots frame the player; elsewhere keep him out of the way
-            Player.body.model.gameObject.SetActive(name.Contains("driver") || name.Contains("door"));
+            bool driverShot = name.Contains("driver") || name.Contains("door");
+            Player.body.model.gameObject.SetActive(driverShot);
+            if (driverShot)
+            {
+                // The body lives on its own layer and its renderers are toggled by
+                // the follow camera; a composed shot must not inherit that state.
+                Player.body.ThirdPerson = true;
+                Player.body.Visible = true;
+                if (cam != null) cam.cullingMask |= (1 << DriverBody.Layer);
+            }
         }
         if (hideMarkers) SetInspectionMarkers(false);
         cam.transform.SetParent(null, true);
@@ -2236,7 +2261,7 @@ public class GameFlow : MonoBehaviour
         tripMiles = UIFactory.Label(tp.transform, "Miles", "0.00 MI", 38, new Color(0.94f, 0.96f, 0.98f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripMiles.rectTransform, new Vector2(18, -32), new Vector2(200, 46));
         tripDetail = UIFactory.Label(tp.transform, "Detail", "DRIVEN · ROUTE 0.12 MI OF 32 ASSIGNED", 17, new Color(0.74f, 0.82f, 0.87f), TextAnchor.UpperLeft);
-        UIFactory.TopLeft(tripDetail.rectTransform, new Vector2(18, -82), new Vector2(344, 24));
+        UIFactory.TopLeft(tripDetail.rectTransform, new Vector2(18, -82), new Vector2(360, 24));
         tripEta = UIFactory.Label(tp.transform, "Eta", "DEP 05:40 · ETA 05:41 · 1 UNIT = 1 M", 16, new Color(0.58f, 0.72f, 0.80f), TextAnchor.UpperLeft);
         UIFactory.TopLeft(tripEta.rectTransform, new Vector2(18, -118), new Vector2(344, 24));
         tripPanel = tp.gameObject;
@@ -2369,27 +2394,59 @@ public class GameFlow : MonoBehaviour
         pausePanel.SetActive(false);
     }
 
+    InputField kioskLoad, kioskTrailer, kioskSeal;
+
+    InputField KioskField(Transform parent, string label, float y)
+    {
+        var lab = UIFactory.Label(parent, label + "Label", label, 18, new Color(0.72f, 0.80f, 0.86f), TextAnchor.LowerLeft, FontStyle.Bold);
+        var lrt = lab.rectTransform;
+        lrt.anchorMin = lrt.anchorMax = new Vector2(0f, 1f);
+        lrt.pivot = new Vector2(0f, 1f);
+        lrt.anchoredPosition = new Vector2(28, y);
+        lrt.sizeDelta = new Vector2(400, 24);
+        var bg = UIFactory.Panel(parent, label + "Field", new Vector2(780, 44), Vector2.zero, new Color(0.08f, 0.11f, 0.14f), true, 8);
+        var brt = bg.rectTransform;
+        brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 1f);
+        brt.pivot = new Vector2(0.5f, 1f);
+        brt.anchoredPosition = new Vector2(0f, y - 30f);
+        var input = bg.gameObject.AddComponent<InputField>();
+        var txt = UIFactory.Label(bg.transform, "Text", "", 22, Color.white, TextAnchor.MiddleLeft);
+        txt.rectTransform.anchorMin = Vector2.zero;
+        txt.rectTransform.anchorMax = Vector2.one;
+        txt.rectTransform.offsetMin = new Vector2(14f, 0f);
+        txt.rectTransform.offsetMax = new Vector2(-14f, 0f);
+        input.textComponent = txt;
+        input.text = "";
+        return input;
+    }
+
+    // PLACEHOLDER: kiosk fields and validation rules - confirm with the site.
+    public void KioskSubmit()
+    {
+        string load = kioskLoad != null ? kioskLoad.text.Trim().ToUpperInvariant() : "";
+        string trailer = kioskTrailer != null ? kioskTrailer.text.Trim().ToUpperInvariant() : "";
+        string seal = kioskSeal != null ? kioskSeal.text.Trim() : "";
+        bool ok = load.Contains("D2D-0612") && trailer.Contains("A-14") && seal == "482913";
+        GuardAnswer(ok);
+    }
+
     void BuildGuard()
     {
         var panel = UIFactory.Panel(hudRoot.transform, "Guard", new Vector2(860, 390), Vector2.zero, new Color(0.025f, 0.04f, 0.055f, 0.95f), true, 24);
         UIFactory.BottomCenter(panel.rectTransform, new Vector2(0, 170), new Vector2(860, 390));
         guardPanel = panel.gameObject;
-        var title = UIFactory.Label(panel.rectTransform, "Title", "GATE 1  ·  SECURITY", 22, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        var title = UIFactory.Label(panel.rectTransform, "Title", "GATE 1  ·  KIOSK", 22, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(title.rectTransform, new Vector2(28, -20), new Vector2(700, 32));
         guardText = UIFactory.Label(panel.rectTransform, "Text", "", 24, Color.white, TextAnchor.UpperLeft);
         UIFactory.TopLeft(guardText.rectTransform, new Vector2(28, -58), new Vector2(800, 110));
-        var a = UIFactory.Button(panel.rectTransform, "Correct", "07:30  ·  AMAZON RNO-PLACEHOLDER  ·  SEAL 482913", new Vector2(780, 58), new Vector2(0, -190), new Color(0.10f, 0.18f, 0.23f), Color.white, 22, () => GuardAnswer(true));
-        a.GetComponent<RectTransform>().anchorMin = a.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 1);
-        a.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 1);
-        a.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, -190);
-        var b = UIFactory.Button(panel.rectTransform, "Wrong1", "08:00  ·  AMAZON RNO-PLACEHOLDER  ·  SEAL 482913", new Vector2(380, 54), new Vector2(-190, -260), new Color(0.08f, 0.11f, 0.14f), Color.white, 18, () => GuardAnswer(false));
-        b.GetComponent<RectTransform>().anchorMin = b.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 1);
-        b.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 1);
-        b.GetComponent<RectTransform>().anchoredPosition = new Vector2(-190, -260);
-        var c = UIFactory.Button(panel.rectTransform, "Wrong2", "07:30  ·  NORTHGATE  ·  SEAL 482913", new Vector2(380, 54), new Vector2(190, -260), new Color(0.08f, 0.11f, 0.14f), Color.white, 18, () => GuardAnswer(false));
-        c.GetComponent<RectTransform>().anchorMin = c.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 1);
-        c.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 1);
-        c.GetComponent<RectTransform>().anchoredPosition = new Vector2(190, -260);
+        // Self-serve kiosk: the driver enters the load, trailer and seal.
+        kioskLoad = KioskField(panel.rectTransform, "LOAD NUMBER", -170);
+        kioskTrailer = KioskField(panel.rectTransform, "TRAILER", -230);
+        kioskSeal = KioskField(panel.rectTransform, "SEAL", -290);
+        var submit = UIFactory.Button(panel.rectTransform, "Submit", "CONFIRM AND OPEN GATE", new Vector2(780, 50), Vector2.zero, new Color(1f, 0.48f, 0.10f), new Color(0.12f, 0.07f, 0.02f), 22, KioskSubmit);
+        submit.GetComponent<RectTransform>().anchorMin = submit.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 1);
+        submit.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 1);
+        submit.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, -350);
         guardPanel.SetActive(false);
     }
 

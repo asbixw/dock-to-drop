@@ -1866,6 +1866,18 @@ public static class WorldBuilder
         gateWp.position = new Vector3(0f, 6.2f, 205f);
         refs.gateWaypoint = gateWp;
 
+        // ---- driver-side check-in kiosk, before the boom barrier
+        var kiosk = new GameObject("GateKiosk").transform; kiosk.SetParent(g, false);
+        kiosk.position = new Vector3(-8.6f, 0f, 193f);
+        MeshFactory.Cyl("KioskPole", 0.09f, 1.5f, new Vector3(0, 0.75f, 0), metal, kiosk, true);
+        MeshFactory.Box("KioskHead", new Vector3(0.28f, 0.75f, 0.55f), new Vector3(0, 1.75f, 0), dark, kiosk, true);
+        MeshFactory.Box("KioskScreen", new Vector3(0.03f, 0.55f, 0.42f), new Vector3(0.16f, 1.75f, 0), orangeGlow, kiosk, false);
+        MeshFactory.Box("KioskRoof", new Vector3(0.42f, 0.08f, 0.68f), new Vector3(0, 2.16f, 0), metal, kiosk, false);
+        var kioskTxt = MeshFactory.Text3D("KioskText", "GATE KIOSK", new Vector3(0.19f, 1.75f, 0f), 0.085f, new Color(0.10f, 0.12f, 0.14f), kiosk);
+        MeshFactory.FaceBack(kioskTxt);
+        // stop bar across the inbound lane, level with the kiosk
+        MeshFactory.Box("KioskStopBar", new Vector3(6.2f, 0.02f, 0.45f), new Vector3(0f, 0.095f, 191.5f), whitePaint, g, false);
+
         // ---- trigger before the arm
         var trig = new GameObject("GateTrigger"); trig.transform.SetParent(g, false); trig.transform.position = new Vector3(0, 2, 188);
         var bc = trig.AddComponent<BoxCollider>(); bc.size = new Vector3(15, 5.5f, 10); bc.isTrigger = true;
