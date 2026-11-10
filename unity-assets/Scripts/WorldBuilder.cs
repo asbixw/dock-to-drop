@@ -487,17 +487,26 @@ public static class WorldBuilder
         for (int i = 0; i < 22; i++)
         {
             float x = -210 + i * 21f;
-            Tree(g, new Vector3(x, 0, 424 + (i % 3) * 15f), 1.0f + (i % 4) * 0.16f);
+            float z = 424 + (i % 3) * 15f;
+            // The highway runs down the middle of the map; never plant a tree
+            // in the lane or the shoulder. 14.5 m = road half-width + shoulder
+            // + a small margin.
+            if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
+            Tree(g, new Vector3(x, 0, z), 1.0f + (i % 4) * 0.16f);
         }
         for (int i = 0; i < 22; i++)
         {
             float x = -280 + i * 27f;
-            Tree(g, new Vector3(x, 0, 500 + (i % 4) * 20f), 1.35f + (i % 3) * 0.2f);
+            float z = 500 + (i % 4) * 20f;
+            if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
+            Tree(g, new Vector3(x, 0, z), 1.35f + (i % 3) * 0.2f);
         }
         for (int i = 0; i < 20; i++)
         {
             float x = -330 + i * 37f;
-            Tree(g, new Vector3(x, 0, -90 - (i % 4) * 30f), 1.3f + (i % 3) * 0.24f);
+            float z = -90 - (i % 4) * 30f;
+            if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
+            Tree(g, new Vector3(x, 0, z), 1.3f + (i % 3) * 0.24f);
         }
         for (int i = 0; i < 8; i++)
             Tree(g, new Vector3(-130 + i * 9f, 0, -58 - (i % 2) * 12f), 0.9f + (i % 3) * 0.2f);
