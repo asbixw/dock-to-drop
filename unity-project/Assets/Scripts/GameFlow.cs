@@ -876,7 +876,7 @@ public class GameFlow : MonoBehaviour
             + "CONTACTS " + contactCount + " · HARD BRAKES " + hardBrakeCount + " · ENGINE-RUNNING EXITS " + engineRunningExits
             + " · BACKING CONTACTS " + backingContacts + " · KINGPIN MISSES " + kingpinMisses + "\n"
             + "INSPECTIONS " + inspected + "/5 · SEAL " + (sealPhotoSent ? "SENT" : "NOT SENT")
-            + " · GATE " + (gatePassed ? "CHECKED IN" : "MISSED")
+            + " · GATE " + (gatePassed ? "CHECKED IN" : "MISSED") + " (" + guardWrongAttempts + " WRONG ANSWERS)"
             + " · DEADHEAD " + (deadheadArrived ? (deadheadOnTime ? "ON TIME" : "LATE") : "NOT ARRIVED")
             + "   ·   COMPANY STANDARD: 0 CONTACTS [PLACEHOLDER: confirm policy]   ·   " + overall;
     }
@@ -1217,9 +1217,12 @@ public class GameFlow : MonoBehaviour
         }
         float step = FlatXZ(p - deadheadLastPos).magnitude;
         deadheadLastPos = p;
-        // A teleport or a scene cut is not driving. At road speed a frame is
-        // well under a metre; the gate move in the staged runs is much larger.
-        if (step > 1.5f) return;
+        // A teleport or a scene cut is not driving. Allow for low frame rates:
+        // at 10 fps and 25 m/s a real frame covers 2.5 m, and that distance
+        // still belongs on the odometer. Only a jump far beyond the truck's
+        // own speed is treated as a teleport.
+        float maxStep = Mathf.Max(1.5f, Mathf.Abs(Truck.speed) * Time.deltaTime * 2f);
+        if (step > maxStep) return;
         if (!deadheadActive)
         {
             if (!Truck.engineOn || step < 0.0005f) return;
@@ -1443,7 +1446,7 @@ public class GameFlow : MonoBehaviour
 
         // A visible build stamp: if this line is missing, the window is not the
         // build that contains the HUD, ground-contact and deadhead fixes.
-        var build = UIFactory.Label(c.transform, "Build", "v" + Application.version + "  ·  BUILD 2026-11-09  ·  HUD + GROUND + DEADHEAD", 18, new Color(0.46f, 0.56f, 0.63f), TextAnchor.LowerRight);
+        var build = UIFactory.Label(c.transform, "Build", "v" + Application.version + "  ·  BUILD 2026-11-10  ·  REAL DEADHEAD + STAGES 1-5", 18, new Color(0.46f, 0.56f, 0.63f), TextAnchor.LowerRight);
         var brt = build.rectTransform;
         brt.anchorMin = brt.anchorMax = new Vector2(1, 0);
         brt.pivot = new Vector2(1, 0);
@@ -2181,7 +2184,7 @@ public class GameFlow : MonoBehaviour
         // moves after the gate are explicitly not part of the trip.
         var tp = UIFactory.Panel(hudRoot.transform, "Trip", new Vector2(380, 152), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.64f), true, 18);
         UIFactory.TopRight(tp.rectTransform, new Vector2(24, -132), new Vector2(380, 152));
-        tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · DFW9 · TRAINING SLICE", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · DFW9", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripKicker.rectTransform, new Vector2(18, -12), new Vector2(344, 22));
         tripMiles = UIFactory.Label(tp.transform, "Miles", "0.00 MI", 38, new Color(0.94f, 0.96f, 0.98f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripMiles.rectTransform, new Vector2(18, -32), new Vector2(200, 46));

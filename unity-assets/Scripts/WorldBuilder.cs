@@ -332,11 +332,13 @@ public static class WorldBuilder
         MeshFactory.Box("HighwayCentreB", new Vector3(0.14f, 0.02f, len), new Vector3(0.18f, 0.085f, start + len / 2f), centre, g, false);
 
         // Delineator posts and mile boards give the eye real motion cues over the
-        // long run without thousands of props or a streaming manager.
-        for (float z = start + 40f; z < end; z += 100f)
+        // long run. Posts are spaced 1 km apart so a 60-mile road does not add
+        // thousands of draw calls; the continuous edge and centre lines carry
+        // the sense of speed between them.
+        int delineator = 0;
+        for (float z = start + 250f; z < end; z += 1000f)
         {
-            int k = Mathf.RoundToInt((z - start) / 100f);
-            float side = k % 2 == 0 ? -1f : 1f;
+            float side = delineator++ % 2 == 0 ? -1f : 1f;
             MeshFactory.Box("Delineator", new Vector3(0.12f, 1.05f, 0.12f), new Vector3(side * 7.8f, 0.60f, z), whitePaint, g, false);
             MeshFactory.Box("DelineatorReflector", new Vector3(0.16f, 0.14f, 0.02f), new Vector3(side * 7.8f, 0.95f, z - 0.07f), orangeGlow, g, false);
         }
