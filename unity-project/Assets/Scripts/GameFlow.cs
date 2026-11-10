@@ -62,19 +62,16 @@ public class GameFlow : MonoBehaviour
     int backingContacts;
     TrailerRig Rig => World != null ? World.trailerRig : null;
     bool InspectionDone => inspected >= 5 && sealPhotoSent;
-    string DeadheadObjective => "Deadhead to Gate 1 · DFW9. Training slice "
-        + DeadheadRouteMiles.ToString("F2") + " mi (assigned " + DeadheadAssignedMiles + " mi).";
+    string DeadheadObjective => "Deadhead " + DeadheadAssignedMiles + " mi to Gate 1 · Amazon DFW9.";
     bool autoPlayMode;
     bool uiShotMode;
     string shotDir;
 
     // ---- deadhead -------------------------------------------------------
-    // The assignment is 32/60 miles, but the drivable world is ~200 m from the
-    // lot to Gate 1. Earlier builds silently compressed those miles onto the
-    // short road. That is gone: the odometer integrates the truck's real path at
-    // 1 world unit = 1 metre, and every trip line says "training slice" next to
-    // the assigned distance. A full 32/60-mile highway would need tens of km of
-    // extra geometry; this build is honest about the shorter route instead.
+    // The assignment is a genuine 32/60-mile drive. The highway is built to
+    // exactly that length (1 world unit = 1 metre) and the odometer integrates
+    // the truck's actual path along it; there is no multiplier or compressed
+    // mileage. The destination yard and gate sit at the far end of the road.
     public int DeadheadAssignedMiles { get; private set; } = 32;
     const float DeadheadMph = 55f;
     const float MetresPerMile = 1609.344f;
@@ -431,9 +428,8 @@ public class GameFlow : MonoBehaviour
     {
         if (gatePassed) { RefreshObjective(); return; }
         SetObjective(DeadheadObjective);
-        ShowSubtitle("Engine running. Follow the two-lane north to Gate 1. This is a "
-            + DeadheadRouteMiles.ToString("F2") + "-mile training slice of the " + DeadheadAssignedMiles
-            + "-mile assignment; the odometer counts only what you drive.", 6f);
+        ShowSubtitle("Engine running. Follow the two-lane north to Gate 1. "
+            + DeadheadAssignedMiles + " miles; the odometer counts the metres you actually drive.", 6f);
     }
 
     public void OnExitedTruck()
@@ -606,7 +602,8 @@ public class GameFlow : MonoBehaviour
         if (!ended && rig.coupled && rig.airSupplied && Player.IsSeated)
         {
             Vector3 p = Truck.transform.position;
-            if (p.z < 216f && Mathf.Abs(p.x) < 14f)
+            float destZ = World.destination != null ? World.destination.position.z : 0f;
+            if (p.z < destZ + 216f && p.z > destZ + 150f && Mathf.Abs(p.x) < 14f)
             {
                 if (InspectionDone) { Debug.Log("D2D FLOW departed"); EndShift(); }
                 else if (!departureWarned) { departureWarned = true; ShowWarning("Not yet: the inspection and the seal photo come first.", 3f, 1); }
@@ -726,8 +723,8 @@ public class GameFlow : MonoBehaviour
         endSeal.text = "482913";
         endTime.text = minutes + ":" + secs.ToString("00");
         if (endNote != null)
-            endNote.text = "DEADHEAD " + deadheadMiles.ToString("F2") + " MI DRIVEN · TRAINING SLICE OF "
-                + DeadheadAssignedMiles + " MI · ARR " + (deadheadArrived ? deadheadArrivalClock : "--:--")
+            endNote.text = "DEADHEAD " + deadheadMiles.ToString("F2") + " / " + DeadheadAssignedMiles
+                + " MI DRIVEN · ARR " + (deadheadArrived ? deadheadArrivalClock : "--:--")
                 + "   ·   LOADED 240 MI · $2,450";
     }
 
@@ -1081,7 +1078,7 @@ public class GameFlow : MonoBehaviour
         if (!show) return;
         if (hold)
         {
-            tripKicker.text = "TRAINING SLICE COMPLETE · DFW9";
+            tripKicker.text = "DEADHEAD COMPLETE · DFW9";
             tripMiles.text = deadheadMiles.ToString("F2") + " MI";
             tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI · ASSIGNED " + DeadheadAssignedMiles + " MI";
             tripEta.text = "ODOMETER = DISTANCE ACTUALLY DRIVEN";
@@ -1090,7 +1087,7 @@ public class GameFlow : MonoBehaviour
         tripRefresh -= Time.unscaledDeltaTime;
         if (tripRefresh > 0f) return;
         tripRefresh = 0.12f;
-        tripKicker.text = "DEADHEAD · DFW9 · TRAINING SLICE";
+        tripKicker.text = "DEADHEAD · DFW9";
         tripMiles.text = deadheadMiles.ToString("F2") + " MI";
         tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI OF " + DeadheadAssignedMiles + " ASSIGNED";
         tripEta.text = "DEP " + deadheadDepartClock + " · ETA " + DeadheadEta + " · 1 UNIT = 1 M";
@@ -1109,10 +1106,8 @@ public class GameFlow : MonoBehaviour
             + " drivenUnits=" + deadheadWorld.ToString("F1") + " miles=" + deadheadMiles.ToString("F3")
             + " remainingAssigned=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
         if (!realRun) return;
-        // Never claim the assigned 32/60 miles were driven on this short route.
-        // The HUD, this line and the debrief all say "training slice".
-        ShowSubtitle("TRAINING SLICE COMPLETE · " + deadheadMiles.ToString("F2") + " MI DRIVEN\n"
-            + "Assigned " + DeadheadAssignedMiles + " mi; this route is a short training slice, not a compressed run.", 6f);
+        ShowSubtitle("DEADHEAD COMPLETE · " + deadheadMiles.ToString("F2") + " MI DRIVEN\n"
+            + "Gate 1 · Amazon DFW9. Check in with the guard.", 6f);
     }
 
     // Render scale. On a Retina Mac the window is ~2940 px wide and the GPU
@@ -1424,6 +1419,7 @@ public class GameFlow : MonoBehaviour
     IEnumerator AutoShotRoutine()
     {
         Debug.Log("D2D AUTOSHOT start");
+        float dz = World.destination != null ? World.destination.position.z : 0f;
         yield return new WaitForSeconds(1.6f);
         yield return StartCoroutine(CineShot("01_start",
             new Vector3(-9.8f, 1.18f, 16.4f), new Vector3(0f, 2.95f, 8.0f), 50f));
@@ -1507,14 +1503,14 @@ public class GameFlow : MonoBehaviour
         // the real enter/exit path separately.
         Truck.speed = 0f;
         Truck.Exit(true);
-        Truck.transform.position = new Vector3(0, 0, 182);
+        Truck.transform.position = new Vector3(0, 0, 182f + dz);
         Truck.transform.rotation = Quaternion.identity;
-        Player.Teleport(new Vector3(-5.0f, 0.22f, 173.0f), 0f);
+        Player.Teleport(new Vector3(-5.0f, 0.22f, 173.0f + dz), 0f);
         yield return new WaitForSeconds(0.5f);
         if (!guardOpen) OnGateApproach(Truck);
         yield return new WaitForSeconds(0.4f);
         yield return StartCoroutine(CineShot("04_gate",
-            new Vector3(7.0f, 1.65f, 176.5f), new Vector3(1.0f, 2.2f, 199.5f), 58f));
+            new Vector3(7.0f, 1.65f, 176.5f + dz), new Vector3(1.0f, 2.2f, 199.5f + dz), 58f));
 
         // Clear the guard conversation so the yard shots show the world, not the quiz.
         if (guardOpen)
@@ -1525,15 +1521,15 @@ public class GameFlow : MonoBehaviour
         ClearSubtitle();
         SetObjective("Drive to trailer A-14 in the yard.");
 
-        Truck.transform.position = new Vector3(14, 0, 254);
+        Truck.transform.position = new Vector3(14, 0, 254f + dz);
         Truck.transform.rotation = Quaternion.Euler(0f, 10f, 0f);
         Truck.speed = 0f;
         yield return new WaitForSeconds(0.6f);
         yield return StartCoroutine(CineShot("05_yard",
-            new Vector3(5.5f, 1.68f, 244.0f), new Vector3(20.0f, 2.40f, 266.0f), 55f));
+            new Vector3(5.5f, 1.68f, 244.0f + dz), new Vector3(20.0f, 2.40f, 266.0f + dz), 55f));
 
         yield return StartCoroutine(CineShot("06_container",
-            new Vector3(13.5f, 1.50f, 265.0f), new Vector3(25.5f, 2.55f, 276.0f), 50f));
+            new Vector3(13.5f, 1.50f, 265.0f + dz), new Vector3(25.5f, 2.55f, 276.0f + dz), 50f));
 
         ClearSubtitle();
         SetObjective("Photograph seal 482913 with your phone.  [TAB]");
@@ -1542,7 +1538,7 @@ public class GameFlow : MonoBehaviour
             World.container.TransformPoint(new Vector3(0.28f, 1.76f, 12.10f)), World.container.TransformPoint(new Vector3(-0.22f, 1.34f, 9.28f)), 33f, true));
         // close look at the docks: pallets, signal lights, chocks, puddle
         yield return StartCoroutine(CineShot("08_docks",
-            new Vector3(-40f, 1.7f, 312f), new Vector3(-52f, 1.2f, 327f), 50f, true));
+            new Vector3(-40f, 1.7f, 312f + dz), new Vector3(-52f, 1.2f, 327f + dz), 50f, true));
         yield return StartCoroutine(CouplingShots());
         yield return new WaitForSeconds(0.7f);
         Application.Quit();
@@ -1551,6 +1547,7 @@ public class GameFlow : MonoBehaviour
     IEnumerator AutoPlayRoutine()
     {
         Debug.Log("D2D PLAY start");
+        float dz = World.destination != null ? World.destination.position.z : 0f;
         yield return new WaitForSeconds(1.0f);
         BeginShift();
         yield return new WaitForSeconds(0.8f);
@@ -1614,7 +1611,7 @@ public class GameFlow : MonoBehaviour
         while (!guardOpen && !ended && Time.time - gateT0 < 75f)
         {
             Vector3 p = Truck.transform.position;
-            Vector3 local = Truck.transform.InverseTransformPoint(new Vector3(0f, 0f, 188f));
+            Vector3 local = Truck.transform.InverseTransformPoint(new Vector3(0f, 0f, 188f + dz));
             float ang = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
             Truck.touchSteer = Mathf.Clamp(ang / 20f, -1f, 1f);
             Truck.touchThrottle = Truck.speed < 6.5f ? 0.55f : 0f;
@@ -1648,7 +1645,7 @@ public class GameFlow : MonoBehaviour
 
         // park, exit, and verify feet land on the ground
         Truck.speed = 0f;
-        Truck.transform.position = new Vector3(6f, 0f, 256f);
+        Truck.transform.position = new Vector3(6f, 0f, 256f + dz);
         Truck.transform.rotation = Quaternion.Euler(0f, 20f, 0f);
         yield return new WaitForSeconds(0.4f);
         Truck.Exit();
@@ -1719,6 +1716,7 @@ public class GameFlow : MonoBehaviour
     {
         var rig = Rig;
         if (rig == null) yield break;
+        float dz = World.destination != null ? World.destination.position.z : 0f;
         Time.timeScale = 1f;
         Vector3 f = rig.Forward;
         Quaternion rot = Quaternion.LookRotation(f);
@@ -1773,7 +1771,7 @@ public class GameFlow : MonoBehaviour
 
         // pull out and swing right toward the gate lane
         Time.timeScale = 2f;
-        Vector3[] path = { new Vector3(24f, 0f, 252f), new Vector3(12f, 0f, 236f), new Vector3(2f, 0f, 218f), new Vector3(0f, 0f, 190f) };
+        Vector3[] path = { new Vector3(24f, 0f, 252f + dz), new Vector3(12f, 0f, 236f + dz), new Vector3(2f, 0f, 218f + dz), new Vector3(0f, 0f, 190f + dz) };
         int wp = 0;
         float maxArt = 0f;
         t0 = Time.time;

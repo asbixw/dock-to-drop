@@ -6,6 +6,10 @@ using System.Collections.Generic;
 public class WorldRefs
 {
     public Transform root;
+    // The Amazon gate, yard and dock are built at their authored local
+    // coordinates and then shifted to the far end of the deadhead highway.
+    public Transform destination;
+    public float routeLength;
     public Transform playerSpawn;
     public TruckController truck;
     public Transform truckSeat;
@@ -45,11 +49,32 @@ public static class WorldBuilder
         BuildRoad(root);
         BuildHorizon(root);
         refs.truck = BuildTruck(flow, root, out refs.truckSeat, out refs.truckExit, out refs.driverDoor);
-        BuildAmazon(flow, root, refs);
-        BuildGate(flow, root, refs);
-        BuildYardProps(root);
-        BuildLivedInDetails(root);
-        BuildRealProps(root);
+
+        // The deadhead is real distance: the yard and gate are built at their
+        // authored local coordinates, then placed at the far end of a highway
+        // whose length is exactly the assigned 32/60 miles. The odometer
+        // integrates metres on this road; nothing scales or compresses it.
+        float route = flow.DeadheadAssignedMiles * 1609.344f;
+        var hull = refs.truck.GetComponent<BoxCollider>();
+        float nose = hull != null ? hull.center.z + hull.size.z * 0.5f : 0f;
+        const float gateTriggerZ = 188f, gateTriggerHalf = 5f;
+        float contactLocal = gateTriggerZ - gateTriggerHalf - nose;
+        float destOffset = route + refs.truck.transform.position.z - contactLocal;
+        refs.routeLength = route;
+
+        var dest = new GameObject("Destination").transform;
+        dest.SetParent(root, false);
+        refs.destination = dest;
+        BuildYardGround(dest);
+        BuildAmazon(flow, dest, refs);
+        BuildGate(flow, dest, refs);
+        BuildYardProps(dest);
+        dest.position = new Vector3(0f, 0f, destOffset);
+        BuildHighway(root, destOffset);
+        Debug.Log("D2D ROUTE length=" + route.ToString("F1") + "m (" + flow.DeadheadAssignedMiles
+            + " mi) gateZ=" + (destOffset + 205f).ToString("F1") + " destOffset=" + destOffset.ToString("F1"));
+        BuildLivedInDetails(root, dest);
+        BuildRealProps(root, dest);
         BuildReflectionProbes(root);
         refs.playerSpawn = new GameObject("PlayerSpawn").transform;
         refs.playerSpawn.SetParent(root, false);
@@ -249,23 +274,8 @@ public static class WorldBuilder
         MeshFactory.Box("TruckStopApron", new Vector3(96, 0.10f, 86), new Vector3(-6, 0.035f, -9), lotAsphalt, root, true);
         MeshFactory.Box("TruckStopIsland", new Vector3(30, 0.07f, 26), new Vector3(20, 0.07f, 5), lotConcrete, root, true);
         BuildTravelCenterGround(root);
-        // Amazon yard: concrete field, darker asphalt drive lane and a lighter apron at the docks
-        MeshFactory.Box("AmazonYard", new Vector3(258, 0.14f, 160), new Vector3(25, 0.05f, 296), yardConcrete, root, true);
-        MeshFactory.Box("YardDrive", new Vector3(19, 0.025f, 101), new Vector3(8, 0.158f, 267), yardAsphalt, root, true);
-        MeshFactory.Box("DockApron", new Vector3(258, 0.03f, 24), new Vector3(25, 0.145f, 317), dockConcrete, root, true);
-        MeshFactory.Box("YardLightBand", new Vector3(258, 0.02f, 0.25f), new Vector3(25, 0.17f, 218), roadLine, root, false);
-
-        // shallow saw-cut joints, so the concrete reads as slabs rather than one flat plane
-        for (int i = 0; i < 17; i++)
-        {
-            float jx = -104 + i * 16f;
-            if (jx > -2.2f && jx < 18.2f) continue;
-            MeshFactory.Box("YardJoint", new Vector3(0.055f, 0.018f, 101), new Vector3(jx, 0.148f, 267), joint, root, false);
-        }
-        for (int i = 0; i < 8; i++)
-            MeshFactory.Box("YardJointX", new Vector3(258, 0.018f, 0.055f), new Vector3(25, 0.148f, 224 + i * 12f), joint, root, false);
-        for (int i = 0; i < 8; i++)
-            MeshFactory.Box("YardJointX", new Vector3(258, 0.018f, 0.055f), new Vector3(25, 0.148f, 316 + i * 2.2f), joint, root, false);
+        // The Amazon yard itself is built under Destination, at the far end of
+        // the real deadhead highway (see BuildYardGround), not beside the lot.
 
         // grass strips along the rural road
         for (int s = -1; s <= 1; s += 2)
@@ -276,6 +286,70 @@ public static class WorldBuilder
             MeshFactory.Box("RoadShoulder", new Vector3(4.5f, 0.07f, 200), new Vector3(s * 10.5f, 0.02f, 110), dirt, root, false);
 
         BuildGroundDecals(root);
+    }
+
+    // Yard paving lives with the destination so it travels to the end of the
+    // highway with the gate and the warehouse.
+    static void BuildYardGround(Transform root)
+    {
+        MeshFactory.Box("AmazonYard", new Vector3(258, 0.14f, 160), new Vector3(25, 0.05f, 296), yardConcrete, root, true);
+        MeshFactory.Box("YardDrive", new Vector3(19, 0.025f, 101), new Vector3(8, 0.158f, 267), yardAsphalt, root, true);
+        MeshFactory.Box("DockApron", new Vector3(258, 0.03f, 24), new Vector3(25, 0.145f, 317), dockConcrete, root, true);
+        MeshFactory.Box("YardLightBand", new Vector3(258, 0.02f, 0.25f), new Vector3(25, 0.17f, 218), roadLine, root, false);
+        for (int i = 0; i < 17; i++)
+        {
+            float jx = -104 + i * 16f;
+            if (jx > -2.2f && jx < 18.2f) continue;
+            MeshFactory.Box("YardJoint", new Vector3(0.055f, 0.018f, 101), new Vector3(jx, 0.148f, 267), joint, root, false);
+        }
+        for (int i = 0; i < 8; i++)
+            MeshFactory.Box("YardJointX", new Vector3(258, 0.018f, 0.055f), new Vector3(25, 0.148f, 224 + i * 12f), joint, root, false);
+        for (int i = 0; i < 8; i++)
+            MeshFactory.Box("YardJointX", new Vector3(258, 0.018f, 0.055f), new Vector3(25, 0.148f, 316 + i * 2.2f), joint, root, false);
+        Probe(root, "YardReflection", new Vector3(18f, 7f, 260f), new Vector3(250f, 34f, 190f), 128);
+    }
+
+    static void BuildHighway(Transform root, float destOffset)
+    {
+        const float start = 217.5f;
+        float end = destOffset + 430f;
+        float len = Mathf.Max(1f, end - start);
+        var g = new GameObject("Highway").transform; g.SetParent(root, false);
+        var hwAsphalt = MeshFactory.TexMat("HighwayAsphalt", asphaltD, T("asphalt_hq_n"), new Vector2(4f, len / 4f), 0.06f);
+        hwAsphalt.color = new Color(1f, 1f, 1f);
+        hwAsphalt.SetFloat("_BumpScale", 0.34f);
+        var hwShoulder = MeshFactory.TexMat("HighwayShoulder", concD, T("concrete_hq_n"), new Vector2(2f, len / 3f), 0.10f);
+        var hwDirt = MeshFactory.Mat("HighwayDirt", new Color(0.56f, 0.50f, 0.40f), 0f, 0.06f);
+        var centre = MeshFactory.Mat("HighwayCentre", new Color(0.82f, 0.66f, 0.22f), 0f, 0.34f);
+
+        MeshFactory.Box("HighwayGround", new Vector3(640f, 0.2f, len + 900f), new Vector3(0f, -0.14f, start + len / 2f), hwDirt, g, false);
+        MeshFactory.Box("HighwaySurface", new Vector3(15f, 0.08f, len), new Vector3(0f, 0.04f, start + len / 2f), hwAsphalt, g, true);
+        MeshFactory.Box("HighwayShoulderL", new Vector3(3f, 0.05f, len), new Vector3(-9f, 0.03f, start + len / 2f), hwShoulder, g, true);
+        MeshFactory.Box("HighwayShoulderR", new Vector3(3f, 0.05f, len), new Vector3(9f, 0.03f, start + len / 2f), hwShoulder, g, true);
+        MeshFactory.Box("HighwayEdgeL", new Vector3(0.16f, 0.02f, len), new Vector3(-6.6f, 0.085f, start + len / 2f), roadLine, g, false);
+        MeshFactory.Box("HighwayEdgeR", new Vector3(0.16f, 0.02f, len), new Vector3(6.6f, 0.085f, start + len / 2f), roadLine, g, false);
+        MeshFactory.Box("HighwayCentreA", new Vector3(0.14f, 0.02f, len), new Vector3(-0.18f, 0.085f, start + len / 2f), centre, g, false);
+        MeshFactory.Box("HighwayCentreB", new Vector3(0.14f, 0.02f, len), new Vector3(0.18f, 0.085f, start + len / 2f), centre, g, false);
+
+        // Delineator posts and mile boards give the eye real motion cues over the
+        // long run without thousands of props or a streaming manager.
+        for (float z = start + 40f; z < end; z += 100f)
+        {
+            int k = Mathf.RoundToInt((z - start) / 100f);
+            float side = k % 2 == 0 ? -1f : 1f;
+            MeshFactory.Box("Delineator", new Vector3(0.12f, 1.05f, 0.12f), new Vector3(side * 7.8f, 0.60f, z), whitePaint, g, false);
+            MeshFactory.Box("DelineatorReflector", new Vector3(0.16f, 0.14f, 0.02f), new Vector3(side * 7.8f, 0.95f, z - 0.07f), orangeGlow, g, false);
+        }
+        int miles = Mathf.Max(1, Mathf.RoundToInt((end - start) / 1609.344f));
+        for (int mi = 1; mi <= miles; mi++)
+        {
+            float z = 8f + mi * 1609.344f;
+            if (z > end - 30f) break;
+            MeshFactory.Cyl("MilePost", 0.06f, 1.5f, new Vector3(9.2f, 0.75f, z), metal, g, false);
+            MeshFactory.Box("MilePlate", new Vector3(0.78f, 0.34f, 0.05f), new Vector3(9.2f, 1.45f, z - 0.03f), green, g, false);
+            var t = MeshFactory.Text3D("MileText", "DFW9  " + (miles - mi + 1) + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
+            MeshFactory.FaceBack(t);
+        }
     }
 
     static void BuildTravelCenterGround(Transform root)
@@ -326,21 +400,11 @@ public static class WorldBuilder
     static void BuildGroundDecals(Transform root)
     {
         var g = new GameObject("GroundDecals").transform; g.SetParent(root, false);
-        // Long tyre streaks in the approach lane and the yard drive.
-        Decal(g, "TireMarksGate", "tire_marks", 3.3f, 30f, new Vector3(0f, 0.100f, 184f), 0f, new Color(0.58f, 0.54f, 0.49f, 0.55f));
-        Decal(g, "TireMarksYard", "tire_marks", 3.2f, 34f, new Vector3(8f, 0.186f, 262f), 0f, new Color(0.58f, 0.54f, 0.49f, 0.48f));
-        Decal(g, "TireMarksTurn", "tire_marks", 2.8f, 16f, new Vector3(15f, 0.186f, 246f), 18f, new Color(0.58f, 0.54f, 0.49f, 0.38f));
-        // Oil and diesel stains around the pumps, gate and dock apron.
+        // Only the travel-center decals stay here. Gate and yard grime are now
+        // part of the destination build at the far end of the deadhead.
         Decal(g, "StainPumpA", "oil_stain", 3.0f, 2.4f, new Vector3(16.5f, 0.112f, 6.2f), 22f, new Color(1f, 1f, 1f, 0.80f));
         Decal(g, "StainPumpB", "oil_stain", 2.0f, 1.7f, new Vector3(20.6f, 0.112f, 9.0f), -40f, new Color(1f, 1f, 1f, 0.62f));
-        Decal(g, "StainGate", "oil_stain", 2.6f, 2.0f, new Vector3(-2.2f, 0.102f, 191.5f), 65f, new Color(1f, 1f, 1f, 0.55f));
-        Decal(g, "StainYardA", "oil_stain", 3.4f, 2.6f, new Vector3(3.5f, 0.137f, 252f), 12f, new Color(1f, 1f, 1f, 0.62f));
-        Decal(g, "StainYardB", "oil_stain", 2.2f, 1.8f, new Vector3(31f, 0.137f, 268f), -28f, new Color(1f, 1f, 1f, 0.48f));
-        Decal(g, "StainYardC", "oil_stain", 2.8f, 2.1f, new Vector3(-4f, 0.137f, 287f), 78f, new Color(1f, 1f, 1f, 0.55f));
-        Vector3[] yardCracks = { new Vector3(-30, 0, 240), new Vector3(46, 0, 236), new Vector3(70, 0, 290), new Vector3(-60, 0, 280), new Vector3(8, 0, 300), new Vector3(30, 0, 250) };
-        for (int i = 0; i < yardCracks.Length; i++)
-            Decal(g, "YardCrack", "crack_a", 8f, 8f, yardCracks[i] + Vector3.up * (yardCracks[i].x > -2f && yardCracks[i].x < 18f ? 0.19f : 0.135f), i * 61f, new Color(1f, 1f, 1f, 0.65f));
-        Decal(g, "StainDock", "oil_stain", 3.6f, 2.8f, new Vector3(11f, 0.176f, 313.5f), 35f, new Color(1f, 1f, 1f, 0.58f));
+        Decal(g, "TireMarksLotB", "tire_marks", 3.0f, 24f, new Vector3(-4f, 0.100f, 20f), 4f, new Color(0.58f, 0.54f, 0.49f, 0.45f));
     }
 
     static void Decal(Transform parent, string name, string texName, float w, float h, Vector3 pos, float yaw, Color tint)
@@ -1573,11 +1637,9 @@ public static class WorldBuilder
 
     static void BuildReflectionProbes(Transform root)
     {
-        // One large yard probe and one tighter stop probe. Standard-shader paint
-        // and chrome have nothing to reflect beyond the skybox without these, which
-        // is why the truck used to look like flat coloured plastic.
+        // The yard probe travels with the destination; this root only owns the
+        // tight stop probe around the truck at the travel center.
         var g = new GameObject("ReflectionProbes").transform; g.SetParent(root, false);
-        Probe(g, "YardReflection", new Vector3(18f, 7f, 260f), new Vector3(250f, 34f, 190f), 128);
         Probe(g, "StopReflection", new Vector3(0f, 5f, 6f), new Vector3(90f, 18f, 70f), 128);
     }
 
@@ -1628,10 +1690,12 @@ public static class WorldBuilder
     // Realistic CC0 props from Poly Haven (see THIRD_PARTY_NOTICES.md): planted
     // beds around the store, street furniture, barriers and scrub along the
     // fence lines. Positions are fixed so every run looks the same.
-    static void BuildRealProps(Transform root)
+    static void BuildRealProps(Transform root, Transform yard)
     {
         if (!PropLibrary.Has("Shrub_A")) return;
         var g = new GameObject("RealProps").transform; g.SetParent(root, false);
+        var yg = new GameObject("DestinationProps").transform;
+        yg.SetParent(yard != null ? yard : root, false);
         string[] shrubs = { "Shrub_A", "Bush_A", "Shrub_B", "Bush_B" };
         // planted beds along both store side walls
         for (int i = 0; i < 6; i++)
@@ -1653,14 +1717,14 @@ public static class WorldBuilder
         // yard: boxes by the dumpster, a covered car in the staff lot
         Vector3 box = OnGround(-81.2f, 326.4f);
         for (int i = 0; i < 5; i++)
-            PropLibrary.Spawn("CardboardBox", new Vector3(box.x + (i % 3) * 0.55f, box.y + (i / 3) * 0.34f, box.z), i * 23f, 1.4f, g);
-        PropLibrary.Spawn("CoveredCar", OnGround(-96.5f, 245f), 8f, 1.05f, g, true);
+            PropLibrary.Spawn("CardboardBox", new Vector3(box.x + (i % 3) * 0.55f, box.y + (i / 3) * 0.34f, box.z), i * 23f, 1.4f, yg);
+        PropLibrary.Spawn("CoveredCar", OnGround(-96.5f, 245f), 8f, 1.05f, yg, true);
         // scrub along the yard fence and the road verges
         for (int i = 0; i < 18; i++)
         {
             float z = 212f + i * 9.5f;
-            PropLibrary.Spawn(shrubs[i % 4], OnGround(-107f + (i % 3) * 0.8f, z), i * 53f, 0.9f + (i % 4) * 0.15f, g);
-            PropLibrary.Spawn(shrubs[(i + 2) % 4], OnGround(158f - (i % 3) * 0.8f, z + 4f), i * 71f, 0.9f + (i % 3) * 0.18f, g);
+            PropLibrary.Spawn(shrubs[i % 4], OnGround(-107f + (i % 3) * 0.8f, z), i * 53f, 0.9f + (i % 4) * 0.15f, yg);
+            PropLibrary.Spawn(shrubs[(i + 2) % 4], OnGround(158f - (i % 3) * 0.8f, z + 4f), i * 71f, 0.9f + (i % 3) * 0.18f, yg);
         }
         for (int i = 0; i < 24; i++)
         {
@@ -1673,9 +1737,11 @@ public static class WorldBuilder
     // pump-island clutter, signage at reading distance, pallets and chocks at the
     // docks. Everything is static, collider-free unless you could walk into it,
     // and kept low-key so it never competes with the truck or the trailer.
-    static void BuildLivedInDetails(Transform root)
+    static void BuildLivedInDetails(Transform root, Transform yard)
     {
         var g = new GameObject("LivedIn").transform; g.SetParent(root, false);
+        var yg = new GameObject("DestinationDetails").transform;
+        yg.SetParent(yard != null ? yard : root, false);
         var puddle = MeshFactory.Mat("Puddle", new Color(0.045f, 0.050f, 0.056f), 0f, 0.96f);
         var wood = MeshFactory.Mat("PalletWood", new Color(0.46f, 0.36f, 0.24f), 0f, 0.22f);
         var shelf = MeshFactory.Mat("StoreShelf", new Color(0.20f, 0.21f, 0.23f), 0.1f, 0.4f);
@@ -1691,28 +1757,28 @@ public static class WorldBuilder
 
         // ---- drying puddles: soft-edged dark wet patches (the old mirror discs read as
         // hard blue ellipses once the lot was no longer hidden under the dirt boxes)
-        void Puddle(Vector3 p, float w, float l, float yaw)
+        void Puddle(Transform parent, Vector3 p, float w, float l, float yaw)
         {
             p.y = SurfaceY(p) + 0.003f;
             if (T("wet_patch") != null)
             {
-                Decal(g, "WetPatch", "wet_patch", w * 1.35f, l * 1.35f, p + Vector3.up * 0.014f, yaw, new Color(1f, 1f, 1f, 0.9f));
+                Decal(parent, "WetPatch", "wet_patch", w * 1.35f, l * 1.35f, p + Vector3.up * 0.014f, yaw, new Color(1f, 1f, 1f, 0.9f));
                 return;
             }
-            var d = MeshFactory.Cyl("Puddle", 0.5f, 0.004f, p, puddle, g, false, 28);
+            var d = MeshFactory.Cyl("Puddle", 0.5f, 0.004f, p, puddle, parent, false, 28);
             d.transform.localScale = new Vector3(w, 0.004f, l);
             d.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
             d.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
         }
-        Puddle(new Vector3(-4.5f, 0.088f, 14.5f), 2.6f, 1.5f, 20f);   // in the walk to the truck
-        Puddle(new Vector3(6.2f, 0.088f, 19.0f), 1.6f, 1.0f, -35f);
-        Puddle(new Vector3(-9.0f, 0.088f, 5.5f), 3.2f, 1.8f, 75f);
-        Puddle(new Vector3(2.5f, 0.088f, -6.0f), 4.0f, 2.2f, 10f);
-        Puddle(new Vector3(-24f, 0.088f, 6.0f), 2.2f, 1.2f, 60f);
-        Puddle(new Vector3(12.5f, 0.123f, 238f), 3.0f, 1.6f, 5f);      // yard
-        Puddle(new Vector3(-12f, 0.123f, 270f), 4.4f, 2.0f, -15f);
-        Puddle(new Vector3(30f, 0.123f, 282f), 2.4f, 1.4f, 40f);
-        Puddle(new Vector3(4f, 0.163f, 309f), 3.6f, 1.7f, 85f);       // dock apron
+        Puddle(g, new Vector3(-4.5f, 0.088f, 14.5f), 2.6f, 1.5f, 20f);   // in the walk to the truck
+        Puddle(g, new Vector3(6.2f, 0.088f, 19.0f), 1.6f, 1.0f, -35f);
+        Puddle(g, new Vector3(-9.0f, 0.088f, 5.5f), 3.2f, 1.8f, 75f);
+        Puddle(g, new Vector3(2.5f, 0.088f, -6.0f), 4.0f, 2.2f, 10f);
+        Puddle(g, new Vector3(-24f, 0.088f, 6.0f), 2.2f, 1.2f, 60f);
+        Puddle(yg, new Vector3(12.5f, 0.123f, 238f), 3.0f, 1.6f, 5f);      // yard
+        Puddle(yg, new Vector3(-12f, 0.123f, 270f), 4.4f, 2.0f, -15f);
+        Puddle(yg, new Vector3(30f, 0.123f, 282f), 2.4f, 1.4f, 40f);
+        Puddle(yg, new Vector3(4f, 0.163f, 309f), 3.6f, 1.7f, 85f);       // dock apron
 
         // ---- the store is open: lit interior behind the glass, shelf silhouettes
         // The store is a solid block, so the "interior" is a lit panel on the
@@ -1779,7 +1845,7 @@ public static class WorldBuilder
         // ---- yard: pallets, chocks and dock lights at the doors
         void PalletStack(Vector3 p, int layers, float yaw)
         {
-            var s = new GameObject("PalletStack").transform; s.SetParent(g, false); s.position = p; s.rotation = Quaternion.Euler(0f, yaw, 0f);
+            var s = new GameObject("PalletStack").transform; s.SetParent(yg, false); s.position = p; s.rotation = Quaternion.Euler(0f, yaw, 0f);
             for (int k = 0; k < layers; k++)
             {
                 float y = 0.075f + k * 0.15f;
@@ -1801,18 +1867,18 @@ public static class WorldBuilder
             float x = -35 + i * 12.5f;
             bool occupied = (i % 3 != 1);
             // dock signal light beside each door: red while a trailer is being worked
-            MeshFactory.Box("DockLightBox", new Vector3(0.30f, 0.55f, 0.12f), new Vector3(x + 3.45f, 2.1f, 329.0f), dark, g, false);
-            MeshFactory.Box("DockLight", new Vector3(0.20f, 0.20f, 0.04f), new Vector3(x + 3.45f, occupied ? 2.24f : 1.97f, 328.93f), occupied ? dockRed : dockGreen, g, false);
+            MeshFactory.Box("DockLightBox", new Vector3(0.30f, 0.55f, 0.12f), new Vector3(x + 3.45f, 2.1f, 329.0f), dark, yg, false);
+            MeshFactory.Box("DockLight", new Vector3(0.20f, 0.20f, 0.04f), new Vector3(x + 3.45f, occupied ? 2.24f : 1.97f, 328.93f), occupied ? dockRed : dockGreen, yg, false);
             // a wheel chock left on the apron, as they always are
             if (i % 2 == 0)
             {
-                var chock = MeshFactory.Box("WheelChock", new Vector3(0.25f, 0.18f, 0.35f), new Vector3(x - 1.2f + (i % 4) * 0.3f, 0.25f, 322.5f - (i % 3) * 0.8f), yellowPaint, g, false);
+                var chock = MeshFactory.Box("WheelChock", new Vector3(0.25f, 0.18f, 0.35f), new Vector3(x - 1.2f + (i % 4) * 0.3f, 0.25f, 322.5f - (i % 3) * 0.8f), yellowPaint, yg, false);
                 chock.transform.rotation = Quaternion.Euler(0f, i * 23f, 0f);
             }
         }
-        var dockNo = MeshFactory.Text3D("DockSpeed", "DOCK AREA  5 MPH", new Vector3(-58f, 2.3f, 326.95f), 0.13f, new Color(0.10f, 0.10f, 0.10f), g);
+        var dockNo = MeshFactory.Text3D("DockSpeed", "DOCK AREA  5 MPH", new Vector3(-58f, 2.3f, 326.95f), 0.13f, new Color(0.10f, 0.10f, 0.10f), yg);
         MeshFactory.FaceBack(dockNo);
-        MeshFactory.Box("DockSpeedPlate", new Vector3(2.4f, 0.42f, 0.03f), new Vector3(-58f, 2.3f, 327.0f), yellowPaint, g, false);
+        MeshFactory.Box("DockSpeedPlate", new Vector3(2.4f, 0.42f, 0.03f), new Vector3(-58f, 2.3f, 327.0f), yellowPaint, yg, false);
     }
 
     static void AddInspection(GameFlow flow, WorldRefs refs, Transform container, string id, string title, string details, Vector3 pos, bool isSeal, Vector3 markerOffset = default(Vector3))

@@ -1,21 +1,19 @@
-# State: 2026-11-07, trailer coupling pass
+# State: 2026-11-10, real deadhead distance + bug batch
 
 **Done this pass** (details in `HANDOFF.md`)
-- Trailer coupling is in and working: `TrailerRig.cs` (kingpin, tractrix follow, jackknife/obstacle stop,
-  landing-gear crank, roll), `AirLines.cs` (red/blue/green hoses that stretch as the trailer swings), a fifth
-  wheel and dash lamp in `WorldBuilder`, loaded-rig physics, tug test and kingpin capture in `TruckController`,
-  and the hook-up flow plus HUD line in `GameFlow`. A-14 is now staged nose-out (yaw 0) with yellow lead-in lines.
-  The shift now ends when you pull the hooked rig out past z < 216, not right after the inspection.
-- The earlier session left 9 subtitle strings in `GameFlow.cs` with raw line breaks (compile error). Fixed to `\n`.
-- Build clean. Both autoplays run the whole hook-up with real interactions (nothing forced) and end
-  `ended=True ... coupled=True lines=True gearUp=True air=True`, 0 exceptions. Logs:
-  `logs/coupling_autoplay.log`, `logs/coupling_autoplay_tp.log`. Frames: `screenshots/autoshot-2026-11-07-coupling/`
-  (09–11 are new), sheet `logs/coupling_sheet.png`.
+- Bug batch 0,a–h committed (`2aea44b`): menu body layer/culling, camera obstruction filtering, reverse gear HUD,
+  gate waypoint, HUD contrast, guard position/collider, back fence + solid barrier arm, opaque speed sign,
+  shadow/LOD tuning. Compile clean; Play Mode not run (no editor here).
+- Stage 1 real distance: Amazon yard, gate and props now sit under a `Destination` root shifted to the end of a
+  new highway built exactly `DeadheadAssignedMiles × 1609.344 m` long. Odometer still integrates actual metres.
+  Removed "training slice" wording; HUD/objective/debrief now state the assigned miles. Shift end and autoplay/
+  autoshot positions are destination-relative.
+- Compile: `COMPILE OK` after stage 1. Play Mode unverified.
 
 **Known risks**
-- Nobody has played the coupling by hand yet. The capture window is ±0.24 m and 12°, and it may feel too tight.
-- Only A-14 can be hooked (`hookTarget`). Walking routes to the glad hands and crank aren't tested, because
-  autoplay teleports the player.
+- 60 mi (~96.5 km) is a genuine long drive. Highway uses one giant collider and tiled material; delivery/hauling
+  tuning may be needed after a human drive.
+- Stage 1 yard detail (puddles, pallets, dock lights, yard props) moved under `Destination`; placement unverified.
 
-**Exact next step.** Have a human play-test the hook-up (back under A-14, tug, lines, crank, air, pull out). Tune
-the capture tolerance and loaded acceleration based on that. Then driver realism (HANDOFF Open #2).
+**Exact next step.** Run the static compile check, commit/push stage 1 as WIP, then implement stage 2
+(load handling / trailer sweep) without touching `WorldBuilder.cs` concurrently.

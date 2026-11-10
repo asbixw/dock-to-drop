@@ -3,6 +3,20 @@
 Backups of the files as they were before coupling (plus the cab-pass HANDOFF/STATE) are in `backups/2026-11-07-coupling/`.
 `TrailerRig.cs`, `AirLines.cs` and `unity-assets/make_coupling_audio.py` are new files with no backup.
 
+## 2026-11-10: real deadhead distance (stage 1)
+
+- **`WorldBuilder`**: `WorldRefs.destination` + `routeLength`. The Amazon yard, gate, warehouse, yard props,
+  yard paving, reflection probe and yard/dock detail now build at their authored local coordinates under a
+  `Destination` transform, which is then placed at `route = DeadheadAssignedMiles × 1609.344 m` from the truck.
+  `BuildHighway` lays a tiled asphalt surface, shoulders, edge/centre lines, delineators and mile boards from
+  z 217.5 to `destOffset + 430` (one box collider on the surface). Local yard ground, yard/gate decals and yard
+  props were removed from the travel-center build so nothing floats on the new road.
+- **`GameFlow`**: removed all "training slice" wording from objective, subtitles, HUD, debrief and engine-start
+  line; they state the assigned miles. Shift-end check is relative to `World.destination` (`destZ + 216`,
+  bounded below by `destZ + 150`). Autoshot and autoplay positions add the destination offset.
+- **Unverified**: Play Mode is impossible here (no editor, no `playtest.sh`). Static compile only
+  (`COMPILE OK`). Milepost text and the single 96 km collider have not been seen in a running build.
+
 ## Done
 - **`TrailerRig`** (on `Trailer_A14`): measures the kingpin, plate, axle, nose and crank from the FBX at start-up.
   For A-14 it logs kingpin (0, 1.07, -8.00), axleZ 5.71, crank (-1.12, 1.55, -5.10). When coupled, the tandem
