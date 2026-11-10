@@ -4,15 +4,15 @@
 
 ![Freightliner Cascadia, authored in Blender](unity-assets/Previews/truck_v4_hero.png)
 
-> 05:40. Dallas, Texas. The lot is still wet from the night.  
-> The trailer is at A-14. The seal is 482913.  
-> Amazon DFW9 opens in twenty minutes.
+> 05:40. Fernley, Nevada. A lamp is on in a small house on the edge of town.  
+> The phone is on the nightstand. The truck is in the driveway.  
+> Amazon RNO-PLACEHOLDER opens in twenty minutes.
 
 This is not a game about driving fast. It is a game about doing a job properly.
 
-You walk out to a Freightliner Cascadia in the dark, open the door, climb into a cab
-that smells like diesel and cold coffee, answer dispatch, verify the load, and drive
-north. You clear a guard gate, stage a 53-foot trailer in a yard built to real
+You wake up in a small Nevada house, answer dispatch on the phone beside your bed,
+walk out to a Freightliner Cascadia in the driveway, open the door, climb into a cab
+that smells like diesel and cold coffee, verify the load, and drive north. You clear a guard gate, stage a 53-foot trailer in a yard built to real
 dimensions, walk the five inspection points, photograph the seal, and send the proof.
 Then the shift ends.
 
@@ -73,14 +73,15 @@ style.
 
 ## The shift
 
-### 1. The lot — 05:40
+### 1. The house — 05:40
 
-The player starts outside a Texas travel center. The asphalt is dark, the pumps are lit,
-and the truck is parked under the canopy with the trailer already coupled. The first
-objective is simple: walk to the driver door and open it.
+The player starts asleep in a small single-story house outside Fernley, Nevada. The
+bedroom is lamp-lit, the truck is parked in the driveway, and the phone on the
+nightstand starts to ring a few seconds after the shift begins.
 
-The walk is the tutorial. The player learns the pace of the game, the scale of the
-truck, and the sound of the lot before anything asks them to drive.
+The walk from the bed to the truck is the tutorial. The player learns the pace of the
+game, the scale of the truck, and the sound of the high desert before anything asks
+them to drive.
 
 ### 2. The cab — 05:42
 
@@ -89,12 +90,10 @@ air seat, and the camera drops into the cab. The interior is dark, trimmed, and 
 charcoal door cards, a padded dash, a cluster that glows, a wheel with a thick rim and a
 column rake that feels like a truck, not a car.
 
-The phone rings. Dispatch has the load.
-
 ### 3. Dispatch — 05:44
 
-The call is a conversation, not a menu. The dispatcher gives the appointment, the
-shipper, the seal number and the rate. The player can ask for a repeat. The details
+The call reaches the driver in the bedroom, not the cab. It is a conversation, not a
+menu: the dispatcher gives the appointment, the shipper, the seal number and the rate. The player can ask for a repeat. The details
 matter later.
 
 Then the player opens Relay, checks the load board, and confirms the seal and the
@@ -107,18 +106,18 @@ builds. The player releases the brake, pulls out of the lot, and drives north. T
 is not a race track: it is a two-lane approach with signs, fences, poles and the first
 light of the morning.
 
-Dispatch assigns a 32- or 60-mile empty deadhead to DFW9. The odometer counts the path
-actually driven, the trip panel shows miles remaining and an ETA, and the shift clock
-advances at 55 mph. A 60-mile assignment simply takes half an hour longer. The 240-mile
-loaded run to Houston is the next leg, not this approach, and yard moves after the gate
-are not counted on the trip.
+Dispatch assigns a 32- or 60-mile empty deadhead to RNO-PLACEHOLDER. The odometer counts the
+path actually driven, the trip panel shows miles remaining and an ETA, and the shift
+clock advances at 55 mph. A 60-mile assignment simply takes half an hour longer. The
+240-mile loaded run to Reno is the next leg, not this approach, and yard moves after
+the gate are not counted on the trip.
 
 The truck has weight. The steering has play. The brakes are air brakes. The player feels
 the trailer behind them.
 
 ### 5. Gate 1 — 06:25
 
-Amazon DFW9 appears as a long low building behind a fence. The guard booth is lit. The
+Amazon RNO-PLACEHOLDER appears as a long low building behind a fence. The guard booth is lit. The
 gate arm is down. The guard asks a check-in question: trailer number, seal, appointment,
 or destination. The player answers. If they are wrong, the guard pushes back. If they
 are right, the arm lifts and the yard opens.
@@ -163,7 +162,7 @@ close:
 - a crowned cab roof and a sleeper roof fairing,
 - flush driver and passenger doors with real shut lines, handles and badges,
 - wheel arches with fender lips, not cut boxes,
-- a recessed grille, chrome bumper, air dam and Texas plate,
+- a recessed grille, chrome bumper, air dam and Nevada plate,
 - swept headlamp pods with projector lenses, DRLs and turn signals,
 - curved mirror arms, hood mirrors, air horns and marker lamps,
 - open aluminum steps on visible brackets,
@@ -198,12 +197,12 @@ highway.
 opening up. The drive is short enough to respect the player's time and long enough to
 establish distance.
 
-**Amazon DFW9** is a fulfillment center, not a warehouse prop: long concrete walls, dock
+**Amazon RNO-PLACEHOLDER** is a fulfillment center, not a warehouse prop: long concrete walls, dock
 doors, trailer parking, lighting poles, a guard booth, a gate arm, fencing, a staging
 pylon and the small human details that make a yard feel used.
 
 **The trailer** is a 53-foot dry van with corrugated sides, rear doors, lock rods,
-hinges, tires, landing gear, mud flaps, an under-ride guard, a Texas plate and a cable
+hinges, tires, landing gear, mud flaps, an under-ride guard, a Nevada plate and a cable
 seal. It is the object the player spends the most time inspecting, so it has to hold up
 to a close look.
 
@@ -556,7 +555,7 @@ add features; it is to raise the floor until the game feels real.
 The player's acceptance criteria:
 - genuinely playable, not a tech demo;
 - a recognizable Freightliner Cascadia and a cab that holds up to a close look;
-- Amazon DFW9 check-in, gate, yard, 53' trailer and five-point inspection;
+- Amazon RNO-PLACEHOLDER check-in, gate, yard, 53' trailer and five-point inspection;
 - natural human voices, not robotic TTS;
 - no constant buzz or hum;
 - keyboard and mouse work with real OS focus;

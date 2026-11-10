@@ -119,14 +119,14 @@ public class PhoneUI : MonoBehaviour
         UIFactory.TopLeft(title.rectTransform, new Vector2(10, -6), new Vector2(780, 48));
         var pay = UIFactory.Label(loadView.transform, "Pay", "$2,450", 92, Color.white, TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(pay.rectTransform, new Vector2(10, -56), new Vector2(700, 108));
-        var route = UIFactory.Label(loadView.transform, "Route", "DALLAS, TX   →   HOUSTON, TX", 38, new Color(0.90f, 0.93f, 0.95f), TextAnchor.UpperLeft, FontStyle.Bold);
+        var route = UIFactory.Label(loadView.transform, "Route", "FERNLEY, NV   →   RENO, NV", 38, new Color(0.90f, 0.93f, 0.95f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(route.rectTransform, new Vector2(10, -164), new Vector2(804, 54));
         var appt = UIFactory.Label(loadView.transform, "Appt", "PICKUP 07:30   ·   DELIVERY 14:00", 30, new Color(0.66f, 0.74f, 0.80f), TextAnchor.UpperLeft);
         UIFactory.TopLeft(appt.rectTransform, new Vector2(10, -216), new Vector2(804, 46));
         var rule = UIFactory.Img(loadView.transform, "Rule", new Vector2(804, 2), Vector2.zero, new Color(1f, 1f, 1f, 0.10f));
         UIFactory.TopLeft(rule.rectTransform, new Vector2(10, -268), new Vector2(804, 2));
 
-        string rows = "SHIPPER     Amazon.com Services LLC\nFACILITY    Amazon DFW9\nADDRESS     4800 Industrial Blvd\nRECEIVER    Amazon DWH1\nADDRESS     9200 Harbor Road\nEQUIPMENT   53' dry container\nWEIGHT      38,500 lb\nSEAL        482913\nCOMMODITY   Palletized retail\nDEADHEAD    " + flow.DeadheadAssignedMiles + " mi empty · travel center → DFW9\nLINEHAUL    240 mi loaded · DFW9 → DWH1";
+        string rows = "SHIPPER     Amazon.com Services LLC\nFACILITY    Amazon RNO-PLACEHOLDER\nADDRESS     4800 Industrial Blvd, Fernley NV\nRECEIVER    Amazon RNO-DELIVERY\nADDRESS     9200 Harbor Road, Reno NV\nEQUIPMENT   53' dry container\nWEIGHT      38,500 lb\nSEAL        482913\nCOMMODITY   Palletized retail\nDEADHEAD    " + flow.DeadheadAssignedMiles + " mi empty · home lot → RNO-PLACEHOLDER\nLINEHAUL    240 mi loaded · RNO-PLACEHOLDER → RNO-DELIVERY";
         var table = UIFactory.Label(loadView.transform, "Table", rows, 30, new Color(0.82f, 0.87f, 0.91f), TextAnchor.UpperLeft);
         table.lineSpacing = 1.08f;
         UIFactory.TopLeft(table.rectTransform, new Vector2(12, -292), new Vector2(800, 480));
@@ -164,7 +164,7 @@ public class PhoneUI : MonoBehaviour
         vlg.childControlHeight = true;
         vlg.childControlWidth = true;
         AddChat("Morning, driver. Amazon load is booked. Details below.", false);
-        AddChat("Deadhead " + flow.DeadheadAssignedMiles + " miles to DFW9 first. Empty, then the loaded run to Houston.", false);
+        AddChat("Deadhead " + flow.DeadheadAssignedMiles + " miles to RNO-PLACEHOLDER first. Empty, then the loaded run to Reno.", false);
         AddDispatchShot();
         AddChat("Copy. Reviewing now.", true);
         var send = UIFactory.Button(chatView.transform, "Send", "SEAL PHOTO", new Vector2(804, 88), new Vector2(0, -1120), new Color(0.13f, 0.20f, 0.26f), Color.white, 30, () => { ShowCamera(sealTarget); });
@@ -356,7 +356,7 @@ public class PhoneUI : MonoBehaviour
     void AddDispatchShot()
     {
         var card = UIFactory.Panel(chatContent, "Shot", new Vector2(780, 280), Vector2.zero, new Color(0.08f, 0.12f, 0.16f), true, 18);
-        var t = UIFactory.Label(card.rectTransform, "T", "DISPATCH SCREENSHOT\nAMAZON RELAY · BOOKED\nDEADHEAD " + flow.DeadheadAssignedMiles + " MI  ·  EMPTY\nDFW9 → DWH1  ·  240 MI LOADED\n$2,450  ·  53' DRY  ·  38,500 LB", 28, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
+        var t = UIFactory.Label(card.rectTransform, "T", "DISPATCH SCREENSHOT\nAMAZON RELAY · BOOKED\nDEADHEAD " + flow.DeadheadAssignedMiles + " MI  ·  EMPTY\nRNO-PLACEHOLDER → RNO-DELIVERY  ·  240 MI LOADED\n$2,450  ·  53' DRY  ·  38,500 LB", 28, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
         UIFactory.Stretch(t.rectTransform, 24, 24, 20, 20);
         var le = card.gameObject.AddComponent<LayoutElement>();
         le.minHeight = 250;

@@ -75,7 +75,7 @@ public class GameFlow : MonoBehaviour
     Text backingText, backingResult;
     TrailerRig Rig => World != null ? World.trailerRig : null;
     bool InspectionDone => inspected >= 5 && sealPhotoSent;
-    string DeadheadObjective => "Deadhead " + DeadheadAssignedMiles + " mi to Gate 1 · Amazon DFW9.";
+    string DeadheadObjective => "Deadhead " + DeadheadAssignedMiles + " mi to Gate 1 · Amazon RNO-PLACEHOLDER.";
     bool autoPlayMode;
     bool uiShotMode;
     string shotDir;
@@ -263,9 +263,17 @@ public class GameFlow : MonoBehaviour
 
     IEnumerator Intro()
     {
-        ShowSubtitle("DALLAS, TEXAS  ·  05:40\nAmazon Relay load  #D2D-0612", 4.5f);
+        ShowSubtitle("FERNLEY, NEVADA  ·  05:40\nAmazon Relay load  #D2D-0612", 4.5f);
         yield return new WaitForSeconds(2.0f);
-        ShowSubtitle("Walk to the truck. Open the driver door.  [E]", 4f);
+        // The call reaches the driver in the bedroom, not the cab. Answer it
+        // here, on the phone on the nightstand.
+        if (!callStarted)
+        {
+            callStarted = true;
+            Ring();
+        }
+        yield return new WaitForSeconds(2.0f);
+        ShowSubtitle("Answer the dispatch call on your phone.", 4f);
     }
 
     void BuildPlayer()
@@ -366,10 +374,11 @@ public class GameFlow : MonoBehaviour
         Truck.SetDoor(false);
         if (doorCol != null) doorCol.enabled = false;
         if (seatCol != null) seatCol.enabled = false;
-        if (callStarted) { if (gatePassed) RefreshObjective(); else SetObjective(Truck.engineOn ? DeadheadObjective : "Start the engine.  [E]"); return; }
+        // The dispatch call belongs to the bedroom. Getting in the cab only
+        // moves the shift on to the engine and the deadhead.
         callStarted = true;
-        SetObjective("Answer the dispatch call.");
-        if (!autoShotMode) StartCoroutine(CallAfter(3.2f));
+        if (gatePassed) RefreshObjective();
+        else SetObjective(Truck.engineOn ? DeadheadObjective : "Start the engine.  [E]");
     }
 
     IEnumerator CallAfter(float t)
@@ -397,9 +406,9 @@ public class GameFlow : MonoBehaviour
     IEnumerator CallRoutine()
     {
         string[][] lines = {
-            new[]{"dispatch_01","Morning, driver. It's Mike. You awake? I've got a loaded fifty-three footer out of the Amazon fulfillment center in Dallas. Good paying run."},
-            new[]{"dispatch_02","Pickup is the Amazon fulfillment center, 4800 Industrial Boulevard, Dallas. Appointment is 7:30. They charge for no-shows, so don't be late."},
-            new[]{"dispatch_03","Delivery is the Amazon delivery station in Houston. Appointment is 14:00. About 240 miles."},
+            new[]{"dispatch_01","Morning, driver. It's Mike. You awake? I've got a loaded fifty-three footer out of the Amazon fulfillment center in Fernley, Nevada. Good paying run."},
+            new[]{"dispatch_02","Pickup is the Amazon fulfillment center, 4800 Industrial Boulevard, Fernley, Nevada. Appointment is 7:30. PLACEHOLDER: late-arrival and no-show policy - confirm with dispatch."},
+            new[]{"dispatch_03","Delivery is the Amazon delivery station in Reno. Appointment is 14:00. About 240 miles."},
             new[]{"dispatch_04","Fifty-three foot dry container, 38,500 pounds, palletized retail. Rate is $2,450 all in. Seal number is 482913."},
             new[]{"dispatch_05","I'm sending the load screenshot to your phone. Open Relay, verify the appointment and the seal, then start rolling."}
         };
@@ -836,8 +845,8 @@ public class GameFlow : MonoBehaviour
         int total = ShiftClockMinutes;
         int minutes = Mathf.FloorToInt(playTime / 60f);
         int secs = Mathf.FloorToInt(playTime % 60f);
-        endKicker.text = "SHIFT 01  ·  DALLAS, TX  ·  " + ClockString(total);
-        endSub.text = "Trailer A-14 is hooked, sealed, and outbound for Houston.";
+        endKicker.text = "SHIFT 01  ·  FERNLEY, NV  ·  " + ClockString(total);
+        endSub.text = "Trailer A-14 is hooked, sealed, and outbound for Reno.";
         endInspect.text = inspected + "/5";
         endSeal.text = "482913";
         endTime.text = minutes + ":" + secs.ToString("00");
@@ -1264,7 +1273,7 @@ public class GameFlow : MonoBehaviour
         if (!show) return;
         if (hold)
         {
-            tripKicker.text = "DEADHEAD COMPLETE · DFW9";
+            tripKicker.text = "DEADHEAD COMPLETE · RNO-PLACEHOLDER";
             tripMiles.text = deadheadMiles.ToString("F2") + " MI";
             tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI · ASSIGNED " + DeadheadAssignedMiles + " MI";
             tripEta.text = "ODOMETER = DISTANCE ACTUALLY DRIVEN";
@@ -1273,7 +1282,7 @@ public class GameFlow : MonoBehaviour
         tripRefresh -= Time.unscaledDeltaTime;
         if (tripRefresh > 0f) return;
         tripRefresh = 0.12f;
-        tripKicker.text = "DEADHEAD · DFW9";
+        tripKicker.text = "DEADHEAD · RNO-PLACEHOLDER";
         tripMiles.text = deadheadMiles.ToString("F2") + " MI";
         tripDetail.text = "DRIVEN · ROUTE " + DeadheadRouteMiles.ToString("F2") + " MI OF " + DeadheadAssignedMiles + " ASSIGNED";
         tripEta.text = "DEP " + deadheadDepartClock + " · ETA " + DeadheadEta + " · 1 UNIT = 1 M";
@@ -1298,7 +1307,7 @@ public class GameFlow : MonoBehaviour
             + " remainingAssigned=" + DeadheadRemainingMiles.ToString("F2") + " arrival=" + deadheadArrivalClock);
         if (!realRun) return;
         ShowSubtitle("DEADHEAD COMPLETE · " + deadheadMiles.ToString("F2") + " MI DRIVEN\n"
-            + "Gate 1 · Amazon DFW9. Check in with the guard.", 6f);
+            + "Gate 1 · Amazon RNO-PLACEHOLDER. Check in with the guard.", 6f);
     }
 
     // Render scale. On a Retina Mac the window is ~2940 px wide and the GPU
@@ -1449,14 +1458,14 @@ public class GameFlow : MonoBehaviour
         c.transform.SetParent(transform, false);
         var dim = UIFactory.Full(c.transform, "Dim", new Color(0.01f, 0.02f, 0.03f, 0.30f));
         dim.raycastTarget = true;
-        var kicker = UIFactory.Label(c.transform, "Kicker", "DALLAS, TEXAS  ·  05:40", 26, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        var kicker = UIFactory.Label(c.transform, "Kicker", "FERNLEY, NEVADA  ·  05:40", 26, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(kicker.rectTransform, new Vector2(80, -90), new Vector2(700, 40));
         var title = UIFactory.Label(c.transform, "Title", "DOCK\nTO DROP", 120, new Color(0.93f, 0.90f, 0.82f), TextAnchor.UpperLeft, FontStyle.Bold);
         title.lineSpacing = 0.82f;
         UIFactory.TopLeft(title.rectTransform, new Vector2(74, -140), new Vector2(900, 300));
         var sub = UIFactory.Label(c.transform, "Sub", "A FREIGHT DAY SIMULATOR", 30, new Color(0.72f, 0.80f, 0.86f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(sub.rectTransform, new Vector2(80, -450), new Vector2(800, 60));
-        var copy = UIFactory.Label(c.transform, "Copy", "FREIGHTLINER CASCADIA  ·  DFW9  ·  DEADHEAD " + DeadheadAssignedMiles + " MI", 24, new Color(0.58f, 0.66f, 0.73f), TextAnchor.LowerLeft);
+        var copy = UIFactory.Label(c.transform, "Copy", "FREIGHTLINER CASCADIA  ·  RNO-PLACEHOLDER  ·  DEADHEAD " + DeadheadAssignedMiles + " MI", 24, new Color(0.58f, 0.66f, 0.73f), TextAnchor.LowerLeft);
         var crt = copy.rectTransform;
         crt.anchorMin = crt.anchorMax = new Vector2(0, 0);
         crt.pivot = new Vector2(0, 0);
@@ -1539,7 +1548,7 @@ public class GameFlow : MonoBehaviour
         yield return StartCoroutine(Shot("11_call"));
 
         Phone.BeginCallAnswered();
-        Phone.SetCallLine("Morning, driver. It's Mike. You awake? I've got a loaded fifty-three footer out of the Amazon fulfillment center in Dallas. Good paying run.");
+        Phone.SetCallLine("Morning, driver. It's Mike. You awake? I've got a loaded fifty-three footer out of the Amazon fulfillment center in Fernley, Nevada. Good paying run.");
         Phone.SetCallNext(null);
         yield return new WaitForSeconds(0.6f);
         yield return StartCoroutine(Shot("12_call_connected"));
@@ -2202,7 +2211,7 @@ public class GameFlow : MonoBehaviour
         // their own panel near the centre so a routine line never covers them.
         var top = UIFactory.Panel(hudRoot.transform, "Objective", new Vector2(500, 104), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.78f), true, 18);
         UIFactory.TopLeft(top.rectTransform, new Vector2(24, -20), new Vector2(500, 104));
-        var kicker = UIFactory.Label(top.rectTransform, "Kicker", "SHIFT 01  ·  DALLAS, TX", 14, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        var kicker = UIFactory.Label(top.rectTransform, "Kicker", "SHIFT 01  ·  FERNLEY, NV", 14, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(kicker.rectTransform, new Vector2(18, -12), new Vector2(464, 22));
         objectiveText = UIFactory.Label(top.rectTransform, "Text", "", 22, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
         objectiveText.horizontalOverflow = HorizontalWrapMode.Wrap;
@@ -2226,11 +2235,11 @@ public class GameFlow : MonoBehaviour
         UIFactory.TopRight(controls.rectTransform, new Vector2(20, -60), new Vector2(330, 26));
 
         // Deadhead trip: assigned miles, actual odometer, miles left and ETA.
-        // It only appears while the truck is rolling toward DFW9; the yard
+        // It only appears while the truck is rolling toward RNO-PLACEHOLDER; the yard
         // moves after the gate are explicitly not part of the trip.
         var tp = UIFactory.Panel(hudRoot.transform, "Trip", new Vector2(380, 170), Vector2.zero, new Color(0.02f, 0.035f, 0.05f, 0.64f), true, 18);
         UIFactory.TopRight(tp.rectTransform, new Vector2(24, -132), new Vector2(380, 152));
-        tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · DFW9", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
+        tripKicker = UIFactory.Label(tp.transform, "Kicker", "DEADHEAD · RNO-PLACEHOLDER", 15, new Color(1f, 0.52f, 0.12f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripKicker.rectTransform, new Vector2(18, -12), new Vector2(344, 22));
         tripMiles = UIFactory.Label(tp.transform, "Miles", "0.00 MI", 38, new Color(0.94f, 0.96f, 0.98f), TextAnchor.UpperLeft, FontStyle.Bold);
         UIFactory.TopLeft(tripMiles.rectTransform, new Vector2(18, -32), new Vector2(200, 46));
@@ -2377,11 +2386,11 @@ public class GameFlow : MonoBehaviour
         UIFactory.TopLeft(title.rectTransform, new Vector2(28, -20), new Vector2(700, 32));
         guardText = UIFactory.Label(panel.rectTransform, "Text", "", 24, Color.white, TextAnchor.UpperLeft);
         UIFactory.TopLeft(guardText.rectTransform, new Vector2(28, -58), new Vector2(800, 110));
-        var a = UIFactory.Button(panel.rectTransform, "Correct", "07:30  ·  AMAZON DFW9  ·  SEAL 482913", new Vector2(780, 58), new Vector2(0, -190), new Color(0.10f, 0.18f, 0.23f), Color.white, 22, () => GuardAnswer(true));
+        var a = UIFactory.Button(panel.rectTransform, "Correct", "07:30  ·  AMAZON RNO-PLACEHOLDER  ·  SEAL 482913", new Vector2(780, 58), new Vector2(0, -190), new Color(0.10f, 0.18f, 0.23f), Color.white, 22, () => GuardAnswer(true));
         a.GetComponent<RectTransform>().anchorMin = a.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 1);
         a.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 1);
         a.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, -190);
-        var b = UIFactory.Button(panel.rectTransform, "Wrong1", "08:00  ·  AMAZON DFW9  ·  SEAL 482913", new Vector2(380, 54), new Vector2(-190, -260), new Color(0.08f, 0.11f, 0.14f), Color.white, 18, () => GuardAnswer(false));
+        var b = UIFactory.Button(panel.rectTransform, "Wrong1", "08:00  ·  AMAZON RNO-PLACEHOLDER  ·  SEAL 482913", new Vector2(380, 54), new Vector2(-190, -260), new Color(0.08f, 0.11f, 0.14f), Color.white, 18, () => GuardAnswer(false));
         b.GetComponent<RectTransform>().anchorMin = b.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 1);
         b.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 1);
         b.GetComponent<RectTransform>().anchoredPosition = new Vector2(-190, -260);
@@ -2427,7 +2436,7 @@ public class GameFlow : MonoBehaviour
         endSeal = Stat(panel.rectTransform, 0, "SEAL", "482913", "VERIFIED", new Color(0.40f, 0.95f, 0.65f));
         endTime = Stat(panel.rectTransform, 380, "SHIFT TIME", "7:42", "READY TO ROLL", new Color(0.83f, 0.90f, 0.94f));
 
-        var note = UIFactory.Label(panel.rectTransform, "Note", "LOAD #D2D-0612   ·   DFW9 → DWH1   ·   240 MI   ·   $2,450", 26, new Color(0.68f, 0.77f, 0.83f), TextAnchor.UpperLeft);
+        var note = UIFactory.Label(panel.rectTransform, "Note", "LOAD #D2D-0612   ·   RNO-PLACEHOLDER → RNO-DELIVERY   ·   240 MI   ·   $2,450", 26, new Color(0.68f, 0.77f, 0.83f), TextAnchor.UpperLeft);
         UIFactory.TopLeft(note.rectTransform, new Vector2(54, -492), new Vector2(1080, 38));
         endNote = note;
 

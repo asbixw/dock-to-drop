@@ -50,6 +50,7 @@ public static class WorldBuilder
         BuildGround(root);
         BuildClouds(root);
         BuildTruckStop(root);
+        BuildHouse(root);
         BuildRoad(root);
         BuildHorizon(root);
         refs.truck = BuildTruck(flow, root, out refs.truckSeat, out refs.truckExit, out refs.driverDoor);
@@ -82,8 +83,9 @@ public static class WorldBuilder
         BuildReflectionProbes(root);
         refs.playerSpawn = new GameObject("PlayerSpawn").transform;
         refs.playerSpawn.SetParent(root, false);
-        refs.playerSpawn.position = new Vector3(-7.6f, 0.11f, 16.4f);
-        refs.playerSpawn.rotation = Quaternion.Euler(0f, 150f, 0f);
+        // Wake up beside the bed in the house; the dispatch call rings in here.
+        refs.playerSpawn.position = new Vector3(-20f, 0.14f, 40f);
+        refs.playerSpawn.rotation = Quaternion.Euler(0f, -56f, 0f);
         return refs;
     }
 
@@ -367,8 +369,9 @@ public static class WorldBuilder
         // same point the odometer measures to. (The old countdown started one
         // mile high, so the board a mile out read "2 MI" and one sat at the gate.)
         float gateFaceZ = destOffset + GateTriggerZ - GateTriggerHalf;
-        // "AMAZON DFW9 / 2 MILES" guide sign, placed two real miles before the
-        // gate. It used to stand 126 m from the start of a 32/60-mile deadhead.
+        // Guide sign, placed two real miles before the gate. It used to stand 126 m
+        // from the start of a 32/60-mile deadhead. The baked sign texture keeps the
+        // original Amazon branding, so the site code is not restated on the panel.
         var hs = new GameObject("HighwaySign").transform; hs.SetParent(g, false); hs.position = new Vector3(14f, 0, Mathf.Max(start + 100f, gateFaceZ - 2f * 1609.344f));   // posts clear of the 3 m shoulder
         MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, true);
         MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, true);
@@ -384,9 +387,63 @@ public static class WorldBuilder
             if (toGo < 1) break;
             MeshFactory.Cyl("MilePost", 0.06f, 1.5f, new Vector3(9.2f, 0.75f, z), metal, g, false);
             MeshFactory.Box("MilePlate", new Vector3(0.78f, 0.34f, 0.05f), new Vector3(9.2f, 1.45f, z - 0.03f), green, g, false);
-            var t = MeshFactory.Text3D("MileText", "DFW9  " + toGo + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
+            var t = MeshFactory.Text3D("MileText", "RNO  " + toGo + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
             MeshFactory.FaceBack(t);
         }
+    }
+
+    // The shift opens in a small single-story house on the edge of a Nevada
+    // town: one lamp-lit bedroom, the phone on the nightstand. The player wakes
+    // here, answers dispatch, then walks out to the truck in the driveway.
+    static void BuildHouse(Transform root)
+    {
+        var g = new GameObject("House").transform; g.SetParent(root, false);
+        g.position = new Vector3(-20f, 0f, 40f);
+
+        // floor slab and flat roof
+        MeshFactory.Box("HouseFloor", new Vector3(7f, 0.12f, 6f), new Vector3(0, 0.06f, 0), wood, g, true);
+        MeshFactory.Box("HouseRoof", new Vector3(7.6f, 0.18f, 6.6f), new Vector3(0, 2.81f, 0), dark, g, false);
+
+        // walls: the east wall has a door opening (1.6 m) in the middle
+        MeshFactory.Box("WallNorth", new Vector3(7f, 2.6f, 0.2f), new Vector3(0, 1.42f, 3f), offWhite, g, true);
+        MeshFactory.Box("WallSouth", new Vector3(7f, 2.6f, 0.2f), new Vector3(0, 1.42f, -3f), offWhite, g, true);
+        MeshFactory.Box("WallWest", new Vector3(0.2f, 2.6f, 6f), new Vector3(-3.5f, 1.42f, 0), offWhite, g, true);
+        MeshFactory.Box("WallEastA", new Vector3(0.2f, 2.6f, 2.2f), new Vector3(3.5f, 1.42f, -1.9f), offWhite, g, true);
+        MeshFactory.Box("WallEastB", new Vector3(0.2f, 2.6f, 2.2f), new Vector3(3.5f, 1.42f, 1.9f), offWhite, g, true);
+        MeshFactory.Box("WallEastTop", new Vector3(0.2f, 0.5f, 1.6f), new Vector3(3.5f, 2.37f, 0), offWhite, g, false);
+        // door frame
+        MeshFactory.Box("DoorFrameL", new Vector3(0.12f, 2.1f, 0.12f), new Vector3(3.5f, 1.17f, -0.85f), wood, g, false);
+        MeshFactory.Box("DoorFrameR", new Vector3(0.12f, 2.1f, 0.12f), new Vector3(3.5f, 1.17f, 0.85f), wood, g, false);
+        MeshFactory.Box("DoorFrameTop", new Vector3(0.12f, 0.12f, 1.8f), new Vector3(3.5f, 2.22f, 0), wood, g, false);
+
+        // bed against the north-west corner
+        MeshFactory.Box("BedFrame", new Vector3(1.6f, 0.32f, 2.1f), new Vector3(-2.4f, 0.30f, 1.7f), wood, g, true);
+        MeshFactory.Box("Mattress", new Vector3(1.5f, 0.22f, 2.0f), new Vector3(-2.4f, 0.57f, 1.7f), whitePaint, g, false);
+        MeshFactory.Box("Blanket", new Vector3(1.55f, 0.10f, 1.2f), new Vector3(-2.4f, 0.72f, 1.4f), fabric, g, false);
+        MeshFactory.Box("Pillow", new Vector3(0.7f, 0.14f, 0.45f), new Vector3(-2.4f, 0.76f, 2.5f), whitePaint, g, false);
+        MeshFactory.Box("Headboard", new Vector3(1.6f, 0.8f, 0.1f), new Vector3(-2.4f, 0.72f, 2.78f), wood, g, false);
+
+        // nightstand, lamp and the phone
+        MeshFactory.Box("Nightstand", new Vector3(0.55f, 0.6f, 0.45f), new Vector3(-1.45f, 0.42f, 2.6f), wood, g, true);
+        MeshFactory.Cyl("LampBase", 0.09f, 0.34f, new Vector3(-1.55f, 0.93f, 2.6f), dark, g, false);
+        MeshFactory.Cyl("LampShade", 0.16f, 0.22f, new Vector3(-1.55f, 1.18f, 2.6f), orangeGlow, g, false);
+        var lampGo = new GameObject("LampLight"); lampGo.transform.SetParent(g, false);
+        lampGo.transform.position = new Vector3(-1.55f, 1.32f, 2.6f);
+        var lamp = lampGo.AddComponent<Light>();
+        lamp.type = LightType.Point; lamp.range = 7f; lamp.intensity = 1.15f;
+        lamp.color = new Color(1f, 0.72f, 0.42f); lamp.shadows = LightShadows.None;
+
+        // the phone on the nightstand: dark body, lit screen
+        MeshFactory.Box("PhoneProp", new Vector3(0.17f, 0.03f, 0.10f), new Vector3(-1.32f, 0.74f, 2.42f), dark, g, false);
+        MeshFactory.Box("PhoneScreen", new Vector3(0.15f, 0.012f, 0.085f), new Vector3(-1.32f, 0.762f, 2.42f), orangeGlow, g, false);
+
+        // a window on the south wall with the pre-dawn sky in it
+        MeshFactory.Box("Window", new Vector3(1.5f, 1.0f, 0.08f), new Vector3(0.6f, 1.65f, -3.02f), glass, g, false);
+        MeshFactory.Box("WindowSill", new Vector3(1.7f, 0.08f, 0.16f), new Vector3(0.6f, 1.12f, -3.0f), wood, g, false);
+
+        // a small rug and a dresser so the room reads as lived-in
+        MeshFactory.Box("Rug", new Vector3(2.2f, 0.02f, 1.6f), new Vector3(-0.6f, 0.135f, 0.4f), fabric, g, false);
+        MeshFactory.Box("Dresser", new Vector3(1.4f, 1.0f, 0.5f), new Vector3(1.6f, 0.62f, 2.6f), wood, g, true);
     }
 
     static void BuildTravelCenterGround(Transform root)
@@ -491,7 +548,7 @@ public static class WorldBuilder
     {
         var g = new GameObject("Horizon").transform; g.SetParent(root, false);
 
-        // A Texas-style water tower gives the flat horizon a landmark.
+        // A Nevada-style water tower gives the flat horizon a landmark.
         var wt = new GameObject("WaterTower").transform; wt.SetParent(g, false); wt.position = new Vector3(92, 0, 148);
         for (int i = 0; i < 4; i++)
         {
@@ -502,7 +559,7 @@ public static class WorldBuilder
         MeshFactory.Cyl("TowerTank", 4.7f, 5.6f, new Vector3(0, 21.2f, 0), offWhite, wt, false);
         MeshFactory.Cyl("TowerRoof", 4.9f, 1.2f, new Vector3(0, 24.5f, 0), whitePaint, wt, false);
         MeshFactory.Cyl("TowerSkirt", 4.2f, 0.45f, new Vector3(0, 18.3f, 0), blue, wt, false);
-        var wtTxt = MeshFactory.Text3D("TowerText", "DFW9", new Vector3(0f, 21.3f, -4.72f), 0.95f, new Color(0.12f, 0.20f, 0.30f), wt);
+        var wtTxt = MeshFactory.Text3D("TowerText", "RNO", new Vector3(0f, 21.3f, -4.72f), 0.95f, new Color(0.12f, 0.20f, 0.30f), wt);
         MeshFactory.FaceBack(wtTxt);
 
         for (int i = 0; i < 20; i++)
@@ -556,7 +613,7 @@ public static class WorldBuilder
             if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
             Tree(g, new Vector3(x, 0, z), 1.35f + (i % 3) * 0.2f);
         }
-        // low scrub along the fence lines breaks up the flat Texas horizon
+        // low scrub along the fence lines breaks up the flat Nevada horizon
         for (int i = 0; i < 26; i++)
         {
             float x = -160 + i * 25f;
@@ -817,7 +874,7 @@ public static class WorldBuilder
         var mm = new GameObject("MileMarker").transform; mm.SetParent(g, false); mm.position = new Vector3(-9.2f, 0, 160f);
         MeshFactory.Box("Post", new Vector3(0.15f, 1.5f, 0.15f), new Vector3(0, 0.75f, 0), roadLine, mm, true);
         MeshFactory.Box("Plate", new Vector3(0.8f, 0.35f, 0.06f), new Vector3(0, 1.45f, 0), green, mm, false);
-        var mt = MeshFactory.Text3D("MileText", "DFW9", new Vector3(0, 1.45f, -0.05f), 0.28f, Color.white, mm);
+        var mt = MeshFactory.Text3D("MileText", "RNO", new Vector3(0, 1.45f, -0.05f), 0.28f, Color.white, mm);
         MeshFactory.FaceBack(mt);
     }
 
@@ -1252,7 +1309,7 @@ public static class WorldBuilder
 
     static void BuildAmazon(GameFlow flow, Transform root, WorldRefs refs)
     {
-        var g = new GameObject("AmazonDFW9").transform; g.SetParent(root, false);
+        var g = new GameObject("AmazonRNO-PLACEHOLDER").transform; g.SetParent(root, false);
 
         // ---- fulfillment center shell
         var wall = MeshFactory.Box("FulfillmentCenter", new Vector3(220, 20, 82), new Vector3(25, 10f, 371), siding, g, true);
@@ -1270,7 +1327,7 @@ public static class WorldBuilder
         MeshFactory.Box("TopBlueBand", new Vector3(221, 3.6f, 0.7f), new Vector3(25, 17.9f, 329.75f), blue, g, false);
         MeshFactory.Box("LogoPanel", new Vector3(50, 8.8f, 0.7f), new Vector3(25, 13.6f, 329.78f), navy, g, false);
         SignQuad("AmazonWordmark", "amazon_logo_white", 21.2f, 7.95f, new Vector3(25f, 13.65f, 329.38f), 0f, g);
-        var tag = MeshFactory.Text3D("FCName", "FULFILLMENT CENTER  ·  DFW9", new Vector3(25, 8.5f, 329.36f), 0.9f, new Color(0.88f, 0.90f, 0.92f), g);
+        var tag = MeshFactory.Text3D("FCName", "FULFILLMENT CENTER  ·  RNO-PLACEHOLDER", new Vector3(25, 8.5f, 329.36f), 0.9f, new Color(0.88f, 0.90f, 0.92f), g);
         MeshFactory.FaceBack(tag);
 
         // ---- office entrance on the left end
@@ -1279,8 +1336,8 @@ public static class WorldBuilder
         MeshFactory.Box("OfficeFrame", new Vector3(7.4f, 0.22f, 0.3f), new Vector3(-70, 3.25f, 329.2f), dark, g, false);
         MeshFactory.Box("OfficeCanopy", new Vector3(11, 0.35f, 4.2f), new Vector3(-70, 4.2f, 327.5f), whitePaint, g, false);
         SignQuad("OfficeLogo", "amazon_logo_navy", 7.4f, 2.9f, new Vector3(-70f, 5.55f, 329.38f), 0f, g);
-        var dfw = MeshFactory.Text3D("DFW9", "DFW9  ·  RELAY", new Vector3(-70, 3.85f, 329.29f), 0.48f, new Color(0.92f, 0.52f, 0.12f), g);
-        MeshFactory.FaceBack(dfw);
+        var relay = MeshFactory.Text3D("RelaySign", "RNO-PLACEHOLDER  ·  RELAY", new Vector3(-70, 3.85f, 329.29f), 0.48f, new Color(0.92f, 0.52f, 0.12f), g);
+        MeshFactory.FaceBack(relay);
         float officeStepY = SurfaceY(new Vector3(-70f, 0f, 328.9f));
         for (int i = 0; i < 3; i++)
             MeshFactory.Box("OfficeStep", new Vector3(9, 0.18f, 0.8f), new Vector3(-70, officeStepY + 0.09f + i * 0.16f, 328.9f - i * 0.65f), concreteDark, g, false);
@@ -1378,7 +1435,7 @@ public static class WorldBuilder
             MeshFactory.Box("MudFlap", new Vector3(0.55f, 0.52f, 0.035f), new Vector3(s * 1.00f, 0.36f, 6.55f), dark, croot, false);
         }
         MeshFactory.Box("RearPlate", new Vector3(0.52f, 0.25f, 0.02f), new Vector3(0.25f, 1.34f, 9.31f), whitePaint, croot, false);
-        var plateTxt = MeshFactory.Text3D("RearPlateTxt", "TEXAS  7F-4829", new Vector3(0.25f, 1.34f, 9.326f), 0.058f, new Color(0.06f, 0.07f, 0.09f), croot);
+        var plateTxt = MeshFactory.Text3D("RearPlateTxt", "NEVADA  7F-4829", new Vector3(0.25f, 1.34f, 9.326f), 0.058f, new Color(0.06f, 0.07f, 0.09f), croot);
         MeshFactory.FaceBack(plateTxt);
 
         // seal 482913: a small cable seal on the left lock rod, with a readable tag.
