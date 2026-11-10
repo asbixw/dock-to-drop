@@ -69,6 +69,7 @@ public static class WorldBuilder
         BuildAmazon(flow, dest, refs);
         BuildGate(flow, dest, refs);
         BuildYardProps(dest);
+        BuildYardSurroundings(dest);
         dest.position = new Vector3(0f, 0f, destOffset);
         BuildHighway(root, destOffset);
         Debug.Log("D2D ROUTE length=" + route.ToString("F1") + "m (" + flow.DeadheadAssignedMiles
@@ -470,6 +471,26 @@ public static class WorldBuilder
         var wtTxt = MeshFactory.Text3D("TowerText", "DFW9", new Vector3(0f, 21.3f, -4.72f), 0.95f, new Color(0.12f, 0.20f, 0.30f), wt);
         MeshFactory.FaceBack(wtTxt);
 
+        for (int i = 0; i < 20; i++)
+        {
+            float x = -330 + i * 37f;
+            float z = -90 - (i % 4) * 30f;
+            if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
+            Tree(g, new Vector3(x, 0, z), 1.3f + (i % 3) * 0.24f);
+        }
+        for (int i = 0; i < 8; i++)
+            Tree(g, new Vector3(-130 + i * 9f, 0, -58 - (i % 2) * 12f), 0.9f + (i % 3) * 0.2f);
+    }
+
+    // Staged trailers, container stacks, staff cars, the perimeter tree rows
+    // and the fence-line scrub belong to the Amazon yard. They used to be built
+    // under the world root at the yard's old coordinates, so once the yard moved
+    // to the end of the real deadhead they were left floating beside the start
+    // of the highway. Built here while Destination is still at the origin, they
+    // travel with the yard.
+    static void BuildYardSurroundings(Transform dest)
+    {
+        var g = new GameObject("YardSurroundings").transform; g.SetParent(dest, false);
         // Rows of staged trailers at the edges of the yard.
         for (int i = 0; i < 3; i++) ParkedTrailer(g, new Vector3(-78 + i * 4.1f, 0, 252), 0f, i % 2 == 0);
         for (int i = 0; i < 3; i++) ParkedTrailer(g, new Vector3(94 + i * 4.1f, 0, 250), 0f, i % 2 == 1);
@@ -501,19 +522,11 @@ public static class WorldBuilder
             if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
             Tree(g, new Vector3(x, 0, z), 1.35f + (i % 3) * 0.2f);
         }
-        for (int i = 0; i < 20; i++)
-        {
-            float x = -330 + i * 37f;
-            float z = -90 - (i % 4) * 30f;
-            if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
-            Tree(g, new Vector3(x, 0, z), 1.3f + (i % 3) * 0.24f);
-        }
-        for (int i = 0; i < 8; i++)
-            Tree(g, new Vector3(-130 + i * 9f, 0, -58 - (i % 2) * 12f), 0.9f + (i % 3) * 0.2f);
         // low scrub along the fence lines breaks up the flat Texas horizon
         for (int i = 0; i < 26; i++)
         {
             float x = -160 + i * 25f;
+            if (Mathf.Abs(x) < 14.5f) continue;   // keep the gate approach clear
             MeshFactory.Sphere("Scrub", 1.4f + (i % 4) * 0.22f, new Vector3(x, 0.55f, 208 + (i % 2) * 2f), green, g);
         }
     }
