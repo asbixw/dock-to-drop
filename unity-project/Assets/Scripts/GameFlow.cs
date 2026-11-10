@@ -1584,12 +1584,27 @@ public class GameFlow : MonoBehaviour
         yield return new WaitForSeconds(0.3f);
         inspected = 5;
         sealPhotoSent = true;
+        gatePassed = true;
+        loadVerified = true;
         int deadheadMinutes = Mathf.CeilToInt(DeadheadRouteMiles * 60f / DeadheadMph);
         deadheadMiles = DeadheadRouteMiles;
         deadheadWorld = deadheadRouteLength;
         deadheadArrived = true;
+        deadheadDepartMinutes = 5 * 60 + 40;
+        deadheadOnTime = true;
         deadheadArrivalClock = ClockString(5 * 60 + 40 + deadheadMinutes);
         playTime = (deadheadMinutes + 5) * 60f;
+        var debriefRig = Rig;
+        if (debriefRig != null)
+        {
+            Truck.hooked = debriefRig;
+            debriefRig.tractor = Truck;
+            debriefRig.coupled = true;
+            debriefRig.tugPassed = true;
+            debriefRig.linesConnected = true;
+            debriefRig.gearUp = true;
+            debriefRig.airSupplied = true;
+        }
         EndShift();
         yield return new WaitForSeconds(0.5f);
         yield return StartCoroutine(Shot("17_end"));
@@ -1799,41 +1814,49 @@ public class GameFlow : MonoBehaviour
         Truck.controlLock = false;
         Truck.touchSteer = 0f;
         Truck.touchBrake = 0f;
-        Time.timeScale = 2f;
+        // The deadhead is real distance. Autoplay compresses time (not
+        // distance): 20x makes a 32/60-mile run finish in a few minutes while
+        // the odometer still integrates every metre.
+        Time.timeScale = 20f;
+        float routeSeconds = DeadheadRouteMiles / DeadheadMph * 3600f;
         float gateT0 = Time.time;
         float nextTripLog = 0f;
-        while (!guardOpen && !ended && Time.time - gateT0 < 75f)
+        while (!guardOpen && !ended && Time.time - gateT0 < routeSeconds + 20f)
         {
             Vector3 p = Truck.transform.position;
             Vector3 local = Truck.transform.InverseTransformPoint(new Vector3(0f, 0f, 188f + dz));
             float ang = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
             Truck.touchSteer = Mathf.Clamp(ang / 20f, -1f, 1f);
-            Truck.touchThrottle = Truck.speed < 6.5f ? 0.55f : 0f;
-            if (Time.time >= nextTripLog)
+            Truck.touchThrottle = Truck.speed < 24f ? 0.6f : 0f;
+            if (Time.unscaledTime >= nextTripLog)
             {
-                nextTripLog = Time.time + 3f;
+                nextTripLog = Time.unscaledTime + 5f;
                 Debug.Log("D2D PLAY deadhead z=" + p.z.ToString("F1") + " speed=" + Truck.speed.ToString("F1")
                     + " miles=" + deadheadMiles.ToString("F3") + " assignedRemaining=" + DeadheadRemainingMiles.ToString("F2")
-                    + " clock=" + ClockNow);
+                    + " routeMiles=" + DeadheadRouteMiles.ToString("F2") + " clock=" + ClockNow);
             }
             yield return null;
         }
         Truck.touchThrottle = 0f;
         Truck.touchSteer = 0f;
         Time.timeScale = 1f;
+        deadheadActive = false;
         Debug.Log("D2D PLAY guardOpen=" + guardOpen + " truckZ=" + Truck.transform.position.z
             + " miles=" + deadheadMiles.ToString("F3") + " assignedRemaining=" + DeadheadRemainingMiles.ToString("F2")
+            + " routeMiles=" + DeadheadRouteMiles.ToString("F2")
             + " arrival=" + deadheadArrivalClock);
-        if (!guardOpen)
-        {
-            OnGateApproach(Truck);
-            yield return new WaitForSeconds(0.4f);
-            Debug.Log("D2D PLAY guard forced=" + guardOpen);
-        }
         if (guardOpen)
         {
             GuardAnswer(true);
             yield return new WaitForSeconds(0.7f);
+        }
+        else
+        {
+            // Never fake the gate or the arrival for a short autoplay run.
+            // AutoHook below teleports the rig to the staged trailer for the
+            // coupling test; the odometer/debrief still report the real,
+            // incomplete deadhead.
+            Debug.Log("D2D PLAY deadhead not completed; skipping gate completion for the coupling test");
         }
         Debug.Log("D2D PLAY gatePassed=" + gatePassed);
 
