@@ -284,14 +284,22 @@ public class TrailerRig : MonoBehaviour
         }
         Vector3 newAxle = hitch - f * L;
         newAxle.y = GroundAt(newAxle.x, newAxle.z).y;
-        // Check the swept path, not only the final pose. A frame at low speed can
-        // move the tandem more than a metre, and the box between the two poses
-        // would otherwise pass through a fence post or a parked rig.
-        int samples = Mathf.Clamp(Mathf.CeilToInt(FlatXZ(newAxle - lastAxle).magnitude / 0.55f), 1, 10);
+        // Check the swept path, not only the final pose. The tandem can move
+        // more than a metre in a frame, and the body also rotates about the
+        // kingpin while the tractor turns; both sweeps are sampled so a fence
+        // post or parked rig cannot be clipped between poses.
+        float yawFinal = Quaternion.LookRotation(-f).eulerAngles.y;
+        float yawDelta = Mathf.Abs(Mathf.DeltaAngle(lastYaw, yawFinal));
+        float travel = FlatXZ(newAxle - lastAxle).magnitude;
+        int samples = Mathf.Clamp(Mathf.Max(
+            Mathf.CeilToInt(travel / 0.55f),
+            Mathf.CeilToInt(yawDelta / 3f)), 1, 16);
         for (int i = 1; i <= samples; i++)
         {
-            Vector3 sample = Vector3.Lerp(lastAxle, newAxle, i / (float)samples);
-            Pose(sample, f, hitch.y, out var sp, out var sr);
+            float t = i / (float)samples;
+            Vector3 sample = Vector3.Lerp(lastAxle, newAxle, t);
+            Vector3 fSample = Quaternion.Euler(0f, Mathf.LerpAngle(lastYaw, yawFinal, t), 0f) * Vector3.back;
+            Pose(sample, fSample, hitch.y, out var sp, out var sr);
             if (Blocked(sp, sr, tr)) return false;
         }
         Pose(newAxle, f, hitch.y, out var pos, out var rot);

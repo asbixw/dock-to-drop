@@ -3,6 +3,18 @@
 Backups of the files as they were before coupling (plus the cab-pass HANDOFF/STATE) are in `backups/2026-11-07-coupling/`.
 `TrailerRig.cs`, `AirLines.cs` and `unity-assets/make_coupling_audio.py` are new files with no backup.
 
+## 2026-11-10: stage 2 — load handling + trailer turning sweep
+
+- **`TruckController`**: added `LoadState` (`Bobtail`/`Loaded`) and named constants: `BobtailMass` 9 t /
+  `LoadedMass` 33 t, accel caps 2.3/1.1 m/s², reverse caps 1.2/0.6, service brakes 6.8/5.0 m/s², rolling
+  drag 0.07/0.09, aero terms 6.5/9.5 and loaded engine-brake factor 0.55. `State`, `Loaded` and `Mass` expose
+  the model to the HUD/debrief; the physics update now uses these constants instead of inline literals.
+- **`TrailerRig.Follow`**: the turning sweep now samples both the tandem translation (≤0.55 m steps) and the
+  trailer heading rotation (≤3° steps), interpolating a trailer-space pose for each sample. Any overlap
+  refuses the tractor's step and raises the existing `VehicleContact` event, so the shift log/debrief sees
+  trailer sweeps, not just the final pose.
+- Still no Play Mode on this box; only `COMPILE OK`. Load feel and sweep tolerance need a human drive.
+
 ## 2026-11-10: real deadhead distance (stage 1)
 
 - **`WorldBuilder`**: `WorldRefs.destination` + `routeLength`. The Amazon yard, gate, warehouse, yard props,

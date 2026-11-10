@@ -52,11 +52,29 @@ public class TruckController : MonoBehaviour
     float lastContactRaise = -10f;
 
     // drivetrain
-    // Tuned, deliberately conservative heavy-truck figures rather than arcade
-    // numbers: ~9 t bobtail / ~33 t with a loaded 53-ft van (about 80,000 lb
-    // gross). Full-throttle acceleration is capped at 2.3 m/s^2 empty and
-    // 1.1 m/s^2 loaded; service braking at 6.8 / 5.0 m/s^2. A loaded rig takes
-    // roughly 40 s to reach 60 mph, which is the feel this model targets.
+    // Heavy-truck load model, tuned from published Class 8 figures rather than
+    // arcade numbers. Bobtail ~9 t; a loaded 53-ft van takes the rig to ~33 t
+    // (about 80,000 lb gross). Constants below are the documented values used
+    // by Update(); acceleration is wheel-force limited and capped by the
+    // traction figures, service braking is air-brake limited, and the
+    // aero/rolling resistance term scales with the actual mass.
+    public enum LoadState { Bobtail, Loaded }
+    public LoadState State => hooked != null ? LoadState.Loaded : LoadState.Bobtail;
+    public bool Loaded => hooked != null;
+    public float Mass => hooked != null ? LoadedMass : BobtailMass;
+    public const float BobtailMass = 9000f;      // kg
+    public const float LoadedMass = 33000f;      // kg, tractor + 53-ft van
+    public const float BobtailAccel = 2.3f;      // m/s^2, full-throttle cap
+    public const float LoadedAccel = 1.1f;       // m/s^2, full-throttle cap
+    public const float BobtailReverseAccel = 1.2f;
+    public const float LoadedReverseAccel = 0.6f;
+    public const float BobtailBrake = 6.8f;      // m/s^2, service brake cap
+    public const float LoadedBrake = 5.0f;       // m/s^2, service brake cap
+    public const float BobtailRolling = 0.07f;   // m/s^2 at low speed
+    public const float LoadedRolling = 0.09f;
+    public const float BobtailAero = 6.5f;       // drag coefficient term
+    public const float LoadedAero = 9.5f;
+    public const float LoadedEngineBrake = 0.55f; // loaded rigs coast more
     static readonly float[] Ratios = { 12.8f, 9.25f, 6.76f, 4.90f, 3.58f, 2.61f, 1.89f, 1.38f, 1.00f, 0.73f };
     const float FinalDrive = 3.55f, WheelRadius = 0.54f, IdleRpm = 650f, GovernedSpeed = 26.8f;
     int gear = 1;            // 0-based; bobtail starts in 2nd like an AMT
@@ -356,8 +374,8 @@ public class TruckController : MonoBehaviour
         float a = 0f;
         float vAbs = Mathf.Abs(speed);
         // coupled to a loaded 53 footer the rig weighs ~33 t instead of ~9 t bobtail
-        bool loaded = hooked != null;
-        float mass = loaded ? 33000f : 9000f;
+        bool loaded = Loaded;
+        float mass = Mass;
         int minGear = loaded ? 0 : 1;
         if (engineOn)
         {
@@ -390,16 +408,16 @@ public class TruckController : MonoBehaviour
 
             // traction: wheel force through the gear, capped by tyre grip (bobtail)
             float force = (shiftTimer > 0f ? 0f : throttleSmooth) * Torque01(rpm) * 2350f * Ratios[gi] * FinalDrive * 0.85f / WheelRadius;
-            float aDrive = Mathf.Min(force / mass, reverse ? (loaded ? 0.6f : 1.2f) : (loaded ? 1.1f : 2.3f));
+            float aDrive = Mathf.Min(force / mass, reverse ? (loaded ? LoadedReverseAccel : BobtailReverseAccel) : (loaded ? LoadedAccel : BobtailAccel));
             if (!reverse && vAbs > GovernedSpeed) aDrive = 0f;
             if (reverse && vAbs > 3.5f) aDrive = 0f;
             float engineBrake = throttleSmooth < 0.05f && vAbs > 1f ? 0.18f + 0.22f * Mathf.InverseLerp(900f, 1900f, rpm) : 0f;
-            a = aDrive - engineBrake * (loaded ? 0.55f : 1f);
+            a = aDrive - engineBrake * (loaded ? LoadedEngineBrake : 1f);
         }
         else rpm = Mathf.Lerp(rpm, 0f, 1f - Mathf.Exp(-2f * dt));
 
-        float resist = (loaded ? 0.09f : 0.07f) + (loaded ? 9.5f : 6.5f) * 0.6f * vAbs * vAbs / mass;   // rolling + aero
-        float brakeDecel = brakeSmooth * (loaded ? 5.0f : 6.8f);
+        float resist = (loaded ? LoadedRolling : BobtailRolling) + (loaded ? LoadedAero : BobtailAero) * 0.6f * vAbs * vAbs / mass;   // rolling + aero
+        float brakeDecel = brakeSmooth * (loaded ? LoadedBrake : BobtailBrake);
         float dir = reverse ? -1f : 1f;
         // integrate along the selected direction, never letting drag/brakes reverse the motion
         float s = speed * dir;            // speed along the drive direction
