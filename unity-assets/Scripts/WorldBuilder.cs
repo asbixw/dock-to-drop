@@ -633,8 +633,8 @@ public static class WorldBuilder
         {
             for (int s = -1; s <= 1; s += 2)
             {
-                MeshFactory.Box("GuardPost", new Vector3(0.12f, 1.0f, 0.12f), new Vector3(s * 10.2f, 0.5f, z), metal, g, false);
-                MeshFactory.Box("GuardRail", new Vector3(0.12f, 0.28f, 9), new Vector3(s * 10.2f, 0.85f, z + 4.5f), metal, g, false);
+                MeshFactory.Box("GuardPost", new Vector3(0.12f, 1.0f, 0.12f), new Vector3(s * 10.2f, 0.5f, z), metal, g, true);
+                MeshFactory.Box("GuardRail", new Vector3(0.12f, 0.28f, 9), new Vector3(s * 10.2f, 0.85f, z + 4.5f), metal, g, true);
             }
         }
 
@@ -650,6 +650,8 @@ public static class WorldBuilder
         {
             var p = new GameObject("UtilityPole").transform; p.SetParent(g, false);
             p.position = new Vector3(14.5f, 0, 27f + i * 21f);
+            var poleCol = p.gameObject.AddComponent<CapsuleCollider>();
+            poleCol.radius = 0.2f; poleCol.height = 9f; poleCol.center = new Vector3(0f, 4.5f, 0f);
             if (PropLibrary.Spawn("PowerPole", p.position, 90f, 1.45f, p) == null)
             {
                 MeshFactory.Cyl("Pole", 0.13f, 9f, new Vector3(0, 4.5f, 0), dark, p, false);
@@ -670,20 +672,21 @@ public static class WorldBuilder
 
         // highway sign with Amazon DFW9
         var hs = new GameObject("HighwaySign").transform; hs.SetParent(g, false); hs.position = new Vector3(12.5f, 0, 126f);
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, false);
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, false);
+        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, true);
+        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, true);
         MeshFactory.Box("SignPanel", new Vector3(8.1f, 2.9f, 0.16f), new Vector3(0, 4.2f, 0), green, hs, false);
         SignQuad("HighwaySignTex", "highway_sign", 7.7f, 2.55f, new Vector3(0f, 4.2f, -0.10f), 0f, hs);
 
         // speed limit 15, set back from the gate lane so it doesn't block the booth
         var sp = new GameObject("SpeedSign").transform; sp.SetParent(g, false); sp.position = new Vector3(-10.4f, 0, 191f);
         MeshFactory.Cyl("Post", 0.07f, 3.3f, new Vector3(0, 1.65f, 0), metal, sp, false);
+        var spc = sp.gameObject.AddComponent<CapsuleCollider>(); spc.radius = 0.14f; spc.height = 3.3f; spc.center = new Vector3(0f, 1.65f, 0f);
         MeshFactory.Box("Board", new Vector3(1.15f, 1.55f, 0.08f), new Vector3(0, 3.0f, 0), whitePaint, sp, false);
         SignQuad("Speed15", "speed_15", 1.1f, 1.5f, new Vector3(0f, 3.0f, -0.05f), 0f, sp);
 
         // small mile marker
         var mm = new GameObject("MileMarker").transform; mm.SetParent(g, false); mm.position = new Vector3(-9.2f, 0, 160f);
-        MeshFactory.Box("Post", new Vector3(0.15f, 1.5f, 0.15f), new Vector3(0, 0.75f, 0), roadLine, mm, false);
+        MeshFactory.Box("Post", new Vector3(0.15f, 1.5f, 0.15f), new Vector3(0, 0.75f, 0), roadLine, mm, true);
         MeshFactory.Box("Plate", new Vector3(0.8f, 0.35f, 0.06f), new Vector3(0, 1.45f, 0), green, mm, false);
         var mt = MeshFactory.Text3D("MileText", "DFW9", new Vector3(0, 1.45f, -0.05f), 0.28f, Color.white, mm);
         MeshFactory.FaceBack(mt);
@@ -1376,7 +1379,7 @@ public static class WorldBuilder
         if (refs.trailerRig != null)
             for (int s = -1; s <= 1; s += 2)
             {
-                Vector3 cp = refs.trailerRig.transform.TransformPoint(new Vector3(s * 1.0f, 0f, refs.trailerRig.axleLocalZ + 1.35f));
+                Vector3 cp = refs.trailerRig.transform.TransformPoint(new Vector3(s * 1.55f, 0f, refs.trailerRig.axleLocalZ + 1.35f));
                 MeshFactory.Box("Chock", new Vector3(0.4f, 0.22f, 0.26f), new Vector3(cp.x, SurfaceY(cp) + 0.11f, cp.z), orange, g, true);
             }
     }
@@ -1827,6 +1830,8 @@ public static class WorldBuilder
     {
         pos.y = SurfaceY(pos);
         var p = new GameObject("LightPole").transform; p.SetParent(parent, false); p.position = pos;
+        var poleCol = p.gameObject.AddComponent<CapsuleCollider>();
+        poleCol.radius = 0.18f; poleCol.height = Mathf.Max(2f, height); poleCol.center = new Vector3(0f, Mathf.Max(1f, height) * 0.5f, 0f);
         // Sketchfab Gardco shoebox pole (9 m, origin at the foot; head lands on +X at yaw 180).
         // The cylinder pole with the Poly Haven flood light is the fallback.
         float s = height / 9f;
@@ -1865,6 +1870,8 @@ public static class WorldBuilder
         pos.y = SurfaceY(pos);
         var c = new GameObject("Cone").transform; c.SetParent(parent, false); c.position = pos;
         c.rotation = Quaternion.Euler(0f, (pos.x * 37f + pos.z * 11f) % 90f, 0f);
+        var coneCol = c.gameObject.AddComponent<BoxCollider>();
+        coneCol.center = new Vector3(0f, 0.36f, 0f); coneCol.size = new Vector3(0.34f, 0.72f, 0.34f);
         if (coneOrange == null)
         {
             coneOrange = MeshFactory.Mat("ConePVC", new Color(0.95f, 0.30f, 0.04f), 0f, 0.55f);
@@ -1908,8 +1915,11 @@ public static class WorldBuilder
         }
         for (int i = 0; i < 3; i++)
             MeshFactory.Box("FenceRail", new Vector3(len, 0.035f, 0.035f), new Vector3(len / 2, 0.45f + i * (height - 0.7f) / 2f, 0), metal, g, false);
-        // semi-transparent chain-link panel
-        
+        // One solid panel for the whole run: a truck that drifts off the road or
+        // cuts the gate corner meets the fence instead of passing through it.
+        var fenceCol = g.gameObject.AddComponent<BoxCollider>();
+        fenceCol.center = new Vector3(len / 2f, height * 0.5f, 0f);
+        fenceCol.size = new Vector3(len, height, 0.16f);
     }
 
     static void SimpleRig(Transform parent, Vector3 pos, float yaw, Color bodyColor)

@@ -53,6 +53,11 @@ public class PlayerController : MonoBehaviour
     bool aimLock;
     Vector3 aimPoint;
     float aimLockUntil;
+    // Title screen: the camera leaves the player and shows a composed yard view.
+    // Without this the camera sits at the first-person eye point while the
+    // driver model is visible in third person, so the menu frames the inside of
+    // the driver's head and arms.
+    bool menuView;
 
     public bool IsSeated => seated;
     bool thirdPersonBeforeSeat;
@@ -79,6 +84,51 @@ public class PlayerController : MonoBehaviour
     bool UseThirdPerson => thirdPerson && !forceFirstPerson;
     public bool ChaseCam => seated && chaseCam && !forceFirstPerson;
 
+    /// <summary>
+    /// Compose the title screen from a fixed yard camera. The player's body is
+    /// hidden while the menu owns the view; <see cref="EndMenuView"/> puts the
+    /// camera back on the player before the shift starts. Gameplay cameras are
+    /// untouched: this only detaches the transform for the duration of the menu.
+    /// </summary>
+    public void ShowMenuView(Vector3 eye, Vector3 look, float fov)
+    {
+        menuView = true;
+        if (body != null)
+        {
+            body.Visible = false;
+            body.model.gameObject.SetActive(false);
+        }
+        if (cam == null) return;
+        cam.transform.SetParent(null, true);
+        cam.transform.position = eye;
+        cam.transform.rotation = Quaternion.LookRotation((look - eye).normalized, Vector3.up);
+        cam.fieldOfView = fov;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
+    /// <summary>Restore the normal first/third-person camera after the menu.</summary>
+    public void EndMenuView()
+    {
+        if (!menuView) return;
+        menuView = false;
+        if (body != null)
+        {
+            body.model.gameObject.SetActive(true);
+            body.Visible = true;
+            body.ThirdPerson = thirdPerson && !forceFirstPerson;
+        }
+        if (cam != null)
+        {
+            cam.transform.SetParent(transform, false);
+            cam.transform.localPosition = camHome.sqrMagnitude > 0.01f ? camHome : new Vector3(0f, 1.66f, 0f);
+            cam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+        }
+        tpInit = false;
+        chaseInit = false;
+        aimLock = false;
+    }
+
     /// Eye point used for interaction rays in third person.
     public Vector3 EyeWorld => transform.position + transform.rotation *
         ((camHome.sqrMagnitude > 0.01f ? camHome : new Vector3(0f, 1.66f, 0f)) + new Vector3(0f, 0f, 0.14f));
@@ -97,7 +147,7 @@ public class PlayerController : MonoBehaviour
             forceFirstPerson = value;
             tpInit = false; chaseInit = false;
             if (body != null) body.ThirdPerson = thirdPerson && !value;
-            if (body != null) body.Visible = true;
+            if (body != null) body.Visible = !menuView;
             if (cam == null) return;
             if (seated) { cam.transform.localPosition = Vector3.zero; ApplySeatedLook(); }
             else if (!UseThirdPerson)
@@ -281,7 +331,7 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        if (uiLock) return;
+        if (uiLock || menuView) return;
 
         float mx = 0f;
         float my = 0f;
@@ -433,7 +483,7 @@ public class PlayerController : MonoBehaviour
         thirdPerson = on;
         tpInit = false;
         bodyYaw = yaw; bodyYawVel = 0f;
-        if (body != null) body.Visible = true;
+        if (body != null) body.Visible = !menuView;
         if (body != null) body.ThirdPerson = on && !forceFirstPerson;
         if (!on && cam != null) cam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
     }

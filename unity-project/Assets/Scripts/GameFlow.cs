@@ -48,6 +48,17 @@ public class GameFlow : MonoBehaviour
     Text trailerText;
     int trailerKey = -1;
     float lastBlockedMsg = -10f, lastJackMsg = -10f;
+    // shift log: contacts, hard braking and cab-securing misses feed the debrief
+    int contactCount;
+    string lastContactName = "";
+    Vector3 lastContactPoint;
+    float lastContactAt = -10f;
+    int hardBrakeCount;
+    float lastHardBrakeAt = -10f;
+    int engineRunningExits;
+    // backing lesson (stage 3)
+    bool backingActive, backingPassed;
+    int backingContacts;
     TrailerRig Rig => World != null ? World.trailerRig : null;
     bool InspectionDone => inspected >= 5 && sealPhotoSent;
     string DeadheadObjective => "Deadhead " + DeadheadAssignedMiles + " mi to Gate 1 · Amazon DFW9.";
@@ -114,6 +125,7 @@ public class GameFlow : MonoBehaviour
     {
         Application.targetFrameRate = 60;
         Application.runInBackground = true;
+        VehicleContactBus.Contact += OnVehicleContact;
         // The project asset has mixed quality levels; force the good one at runtime
         // so a fresh build never starts with shadows and MSAA switched off.
         QualitySettings.shadows = ShadowQuality.All;
@@ -177,6 +189,11 @@ public class GameFlow : MonoBehaviour
         Phone.Close();
         SetObjective("Walk to the Freightliner. Open the driver door.");
         BuildStartScreen();
+        // The title card owns a composed yard view. Keeping the camera on the
+        // player's eyes while the third-person driver model is visible fills the
+        // frame with the inside of his head and arms, so hand the camera to a
+        // fixed pose and hide the body until START SHIFT.
+        Player.ShowMenuView(new Vector3(-10f, 3.0f, 21f), new Vector3(0f, 1.9f, 8f), 52f);
         hudCanvas.gameObject.SetActive(false);
         Player.SetUILock(true);
         if (autoShotMode) StartCoroutine(AutoShotRoutine());
@@ -404,6 +421,13 @@ public class GameFlow : MonoBehaviour
 
     public void OnExitedTruck()
     {
+        // Exit() shuts the engine down as a safety action, but stepping out with
+        // it still running is a real procedure miss, so log it for the debrief.
+        if (Truck != null && Truck.ExitLeftEngineRunning)
+        {
+            engineRunningExits++;
+            ShowWarning("Engine was still running. Shut it down and set the brake before leaving the cab.", 3.5f, 1);
+        }
         // the door is shut behind the driver; one press opens it and climbs back in
         if (doorCol != null) doorCol.enabled = true;
         if (seatCol != null) seatCol.enabled = false;
@@ -515,6 +539,31 @@ public class GameFlow : MonoBehaviour
         if (Time.time - lastBlockedMsg < 3f) return;
         lastBlockedMsg = Time.time;
         ShowWarning("The trailer would hit something. Back up and swing wider.", 3f, 2);
+    }
+
+    // Raised by TruckController and TrailerRig. One shared handler means the HUD,
+    // the shift log and the backing lesson all see the same contacts.
+    void OnVehicleContact(VehicleContact c)
+    {
+        if (!started || ended) return;
+        // Debounce: a held throttle against a wall raises many physics hits.
+        if (Time.time - lastContactAt < 0.9f) return;
+        lastContactAt = Time.time;
+        contactCount++;
+        lastContactName = c.name;
+        lastContactPoint = c.point;
+        if (backingActive) backingContacts++;
+        string what = c.trailer ? "the trailer" : "the tractor";
+        string fast = c.speed > 2.5f ? " At that speed, cargo and equipment can shift." : "";
+        ShowWarning("CONTACT: " + what + " hit " + c.name + "." + fast + " Stop and check before continuing.", 4f, 2);
+        Debug.Log("D2D CONTACT " + (c.trailer ? "trailer" : "tractor") + " collider=" + c.name
+            + " speed=" + c.speed.ToString("F2") + " point=" + c.point.ToString("F1")
+            + " count=" + contactCount);
+    }
+
+    void OnDestroy()
+    {
+        VehicleContactBus.Contact -= OnVehicleContact;
     }
 
     void UpdateCoupling()
@@ -1120,6 +1169,15 @@ public class GameFlow : MonoBehaviour
         if (Truck != null)
         {
             Truck.controlLock = (Phone != null && Phone.IsOpen) || guardOpen || ended;
+            // Hard braking is a safety line in the debrief, not per-frame noise.
+            if (Player != null && Player.IsSeated && !ended && Mathf.Abs(Truck.speed) > 4.5f
+                && Truck.LongAccel < -4.5f && Time.time - lastHardBrakeAt > 3f)
+            {
+                lastHardBrakeAt = Time.time;
+                hardBrakeCount++;
+                ShowWarning("HARD BRAKING. Smooth, progressive pressure keeps the load and the tyres happy.", 3f, 1);
+                Debug.Log("D2D HARDBRAKE decel=" + Truck.LongAccel.ToString("F1") + " count=" + hardBrakeCount);
+            }
             if (speedPanel != null)
             {
                 bool show = Player != null && Player.IsSeated && !ended;
@@ -1221,6 +1279,7 @@ public class GameFlow : MonoBehaviour
         if (!Application.isFocused) ActivateSelf();
         startPanel.SetActive(false);
         hudCanvas.gameObject.SetActive(true);
+        Player.EndMenuView();
         Player.SetUILock(false);
         Player.CaptureCursor();
         Audio.StartMusic();
@@ -1338,6 +1397,7 @@ public class GameFlow : MonoBehaviour
         startPanel.SetActive(false);
         started = true;
         hudCanvas.gameObject.SetActive(true);
+        Player.EndMenuView();
         Player.SetUILock(false);
         Player.CaptureCursor();
         yield return new WaitForSeconds(0.7f);

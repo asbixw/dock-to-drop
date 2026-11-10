@@ -41,9 +41,13 @@ public class TrailerRig : MonoBehaviour
     Vector3 bodyCentre, bodyHalf;
     readonly Collider[] overlap = new Collider[24];
     string lastBlocker;
+    float lastContactRaise = -10f;
 
     public Vector3 KingpinWorld => transform.TransformPoint(kingpinLocal);
     public Vector3 Forward { get { var f = -transform.forward; f.y = 0f; return f.normalized; } }
+    // Middle of the rear doors, about waist height: the point the backing
+    // lesson measures against the dock face.
+    public Vector3 RearCentreWorld => transform.TransformPoint(new Vector3(0f, 1.2f, rearLocalZ));
     public Vector3 CrankWorld => transform.TransformPoint(crankLocal);
     public Vector3 CrankStandWorld => transform.TransformPoint(crankLocal + new Vector3(crankSide * 1.25f, 0f, 0f));
     // curb side: facing the nose (local -z), the right hand is local -x
@@ -280,8 +284,17 @@ public class TrailerRig : MonoBehaviour
         }
         Vector3 newAxle = hitch - f * L;
         newAxle.y = GroundAt(newAxle.x, newAxle.z).y;
+        // Check the swept path, not only the final pose. A frame at low speed can
+        // move the tandem more than a metre, and the box between the two poses
+        // would otherwise pass through a fence post or a parked rig.
+        int samples = Mathf.Clamp(Mathf.CeilToInt(FlatXZ(newAxle - lastAxle).magnitude / 0.55f), 1, 10);
+        for (int i = 1; i <= samples; i++)
+        {
+            Vector3 sample = Vector3.Lerp(lastAxle, newAxle, i / (float)samples);
+            Pose(sample, f, hitch.y, out var sp, out var sr);
+            if (Blocked(sp, sr, tr)) return false;
+        }
         Pose(newAxle, f, hitch.y, out var pos, out var rot);
-        if (Blocked(pos, rot, tr)) return false;
 
         float moved = Vector3.Dot(newAxle - lastAxle, f);
         wheelAngle = Mathf.Repeat(wheelAngle - moved / wheelRadius * Mathf.Rad2Deg, 360f);
@@ -311,10 +324,39 @@ public class TrailerRig : MonoBehaviour
             if (t.IsChildOf(transform) || t.IsChildOf(tr)) continue;
             if (flow != null && flow.Player != null && t.IsChildOf(flow.Player.transform)) continue;
             if (lastBlocker != col.name) { lastBlocker = col.name; Debug.Log("D2D TRAILER blocked by " + col.name); }
+            RaiseContact(col, c);
             if (flow != null) flow.OnTrailerBlocked();
             return true;
         }
         return false;
+    }
+
+    void RaiseContact(Collider col, Vector3 near)
+    {
+        if (Time.time - lastContactRaise < 0.5f) return;
+        lastContactRaise = Time.time;
+        Vector3 p = col.ClosestPoint(near);
+        if (p == Vector3.zero) p = col.bounds.center;
+        VehicleContactBus.Raise(new VehicleContact
+        {
+            name = string.IsNullOrEmpty(col.name) ? "obstacle" : col.name,
+            point = p,
+            speed = tractor != null ? Mathf.Abs(tractor.speed) : 0f,
+            trailer = true
+        });
+    }
+
+    static Vector3 FlatXZ(Vector3 v) { v.y = 0f; return v; }
+
+    // Used by the backing lesson's Retry: put the parked rig back exactly where
+    // it was and forget the cached tandem pose so the next Follow starts clean.
+    public void ResetPose(Vector3 position, Quaternion rotation)
+    {
+        transform.SetPositionAndRotation(position, rotation);
+        lastAxle = AxleGround();
+        lastYaw = transform.eulerAngles.y;
+        Articulation = 0f;
+        rollAng = rollVel = latAccel = 0f;
     }
 
     void LateUpdate()

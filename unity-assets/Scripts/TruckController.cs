@@ -29,6 +29,9 @@ public class TruckController : MonoBehaviour
     public float touchSteer;
     public float touchThrottle;
     public float touchBrake;
+    // Set by Exit(): true when the driver stepped out while the engine was
+    // still running. GameFlow turns this into a procedure line in the debrief.
+    public bool ExitLeftEngineRunning { get; private set; }
 
     Quaternion doorClosed;
     Quaternion doorOpenLocal;
@@ -45,8 +48,15 @@ public class TruckController : MonoBehaviour
     float lastBlockedMsg = -10f;
     static readonly Collider[] rotHits = new Collider[32];
     static readonly Collider[] exitHits = new Collider[24];
+    string lastHitName = "obstacle";
+    float lastContactRaise = -10f;
 
     // drivetrain
+    // Tuned, deliberately conservative heavy-truck figures rather than arcade
+    // numbers: ~9 t bobtail / ~33 t with a loaded 53-ft van (about 80,000 lb
+    // gross). Full-throttle acceleration is capped at 2.3 m/s^2 empty and
+    // 1.1 m/s^2 loaded; service braking at 6.8 / 5.0 m/s^2. A loaded rig takes
+    // roughly 40 s to reach 60 mph, which is the feel this model targets.
     static readonly float[] Ratios = { 12.8f, 9.25f, 6.76f, 4.90f, 3.58f, 2.61f, 1.89f, 1.38f, 1.00f, 0.73f };
     const float FinalDrive = 3.55f, WheelRadius = 0.54f, IdleRpm = 650f, GovernedSpeed = 26.8f;
     int gear = 1;            // 0-based; bobtail starts in 2nd like an AMT
@@ -236,6 +246,7 @@ public class TruckController : MonoBehaviour
             return false;
         }
         driving = false;
+        ExitLeftEngineRunning = engineOn;
         engineOn = false;
         if (audio != null) audio.StopEngine();
         if (player != null) player.ExitTruck(p, r);
@@ -440,9 +451,11 @@ public class TruckController : MonoBehaviour
         if (Mathf.Abs(step) > 1e-5f && Blocked(step, out float allowed))
         {
             // hit something solid: stop at the contact, with a jolt for the camera
+            float impact = Mathf.Abs(speed);
             step = allowed;
-            if (Mathf.Abs(speed) > 2.5f && audio != null) audio.AirBrake(0.3f);
+            if (impact > 2.5f && audio != null) audio.AirBrake(0.3f);
             speed = 0f; throttleSmooth = 0f;
+            RaiseContact(impact);
         }
         if (Mathf.Abs(step) > 1e-5f || Mathf.Abs(yawRate) > 0.01f)
         {
@@ -458,6 +471,7 @@ public class TruckController : MonoBehaviour
                 // candidate pose and only refuse if it is a new overlap.
                 if (RotationBlocked(candidateRot, candidatePos) && !RotationBlocked(transform.rotation, transform.position))
                 {
+                    float impact = Mathf.Abs(speed);
                     yawRate = 0f;
                     speed = 0f;
                     throttleSmooth = 0f;
@@ -466,6 +480,7 @@ public class TruckController : MonoBehaviour
                         lastBlockedMsg = Time.time;
                         flow.ShowWarning("The cab would swing into something. Straighten up and try again.", 3f, 2);
                     }
+                    RaiseContact(impact);
                     deltaYaw = 0f;
                     step = 0f;
                 }
@@ -515,8 +530,23 @@ public class TruckController : MonoBehaviour
             if (h.collider == null || h.collider.transform.IsChildOf(transform)) continue;
             if (hooked != null && h.collider.transform.IsChildOf(hooked.transform)) continue;
             if (h.distance <= 0f && h.point == Vector3.zero) continue;   // started overlapping
-            if (h.distance < best) best = h.distance;
+            if (h.distance < best) { best = h.distance; lastHitName = h.collider.name; }
         }
+    }
+
+    // One contact per half second is enough for the HUD and the shift log; the
+    // physics test itself runs every frame while the driver keeps pushing.
+    void RaiseContact(float speedAtImpact)
+    {
+        if (Time.time - lastContactRaise < 0.5f) return;
+        lastContactRaise = Time.time;
+        VehicleContactBus.Raise(new VehicleContact
+        {
+            name = string.IsNullOrEmpty(lastHitName) ? "obstacle" : lastHitName,
+            point = transform.position + transform.forward * 3f + Vector3.up * 1.2f,
+            speed = Mathf.Abs(speedAtImpact),
+            trailer = false
+        });
     }
 
     bool RotationBlocked(Quaternion rot, Vector3 pos)
@@ -542,6 +572,7 @@ public class TruckController : MonoBehaviour
             if (c.transform.IsChildOf(transform)) continue;
             if (hooked != null && c.transform.IsChildOf(hooked.transform)) continue;
             if (flow != null && flow.Player != null && c.transform.IsChildOf(flow.Player.transform)) continue;
+            lastHitName = c.name;
             return true;
         }
         return false;
