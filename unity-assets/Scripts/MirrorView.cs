@@ -35,7 +35,9 @@ public class MirrorView : MonoBehaviour
         cam.enabled = false;
         cam.cullingMask &= ~(1 << 8);   // DriverBody
 
-        var mat = new Material(Shader.Find("Unlit/Texture"));
+        var shader = Shader.Find("Unlit/Texture");
+        if (shader == null) Debug.LogWarning("D2D MIRROR Unlit/Texture shader missing on " + name);
+        var mat = new Material(shader);
         mat.name = name + "_Mat";
         mat.mainTexture = rt;
         // A mirror flips left and right; the rear-facing camera alone would read
@@ -43,7 +45,8 @@ public class MirrorView : MonoBehaviour
         mat.mainTextureScale = new Vector2(-1f, 1f);
         mat.mainTextureOffset = new Vector2(1f, 0f);
         var mr = GetComponent<MeshRenderer>();
-        if (mr != null) mr.sharedMaterial = mat;
+        if (mr == null) Debug.LogWarning("D2D MIRROR no MeshRenderer on " + name);
+        else mr.sharedMaterial = mat;
     }
 
     void LateUpdate()

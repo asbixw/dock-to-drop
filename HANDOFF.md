@@ -3,6 +3,10 @@
 Backups of the files as they were before coupling (plus the cab-pass HANDOFF/STATE) are in `backups/2026-11-07-coupling/`.
 `TrailerRig.cs`, `AirLines.cs` and `unity-assets/make_coupling_audio.py` are new files with no backup.
 
+- Compile clean (`COMPILE OK`); no Play Mode available on this box.
+- Final pass (`dae53d5` + self-checks): low-fps odometer step allowance, 1 km delineator spacing, stale
+  "training slice" copy removed, route-length mismatch error, mirror shader/renderer warnings, debrief log.
+
 ## 2026-11-10: stages 3–5 — mirrors/backing lesson, debrief, pause/sensitivity
 
 - **`MirrorView.cs`** (new): each west-coast main mirror gets a 192×384 rear-facing camera that renders every

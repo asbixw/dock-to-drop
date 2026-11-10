@@ -203,6 +203,10 @@ public class GameFlow : MonoBehaviour
             deadheadRouteLength = Mathf.Max(1f, FlatXZ(contact - Truck.transform.position).magnitude);
         }
         deadheadLastPos = Truck.transform.position;
+        float assignedMetres = DeadheadAssignedMiles * MetresPerMile;
+        if (Mathf.Abs(deadheadRouteLength - assignedMetres) > 1f)
+            Debug.LogError("D2D ROUTE MISMATCH assigned=" + assignedMetres.ToString("F1")
+                + " measured=" + deadheadRouteLength.ToString("F1"));
         Debug.Log("D2D DEADHEAD assigned=" + DeadheadAssignedMiles + " routeMetres=" + deadheadRouteLength.ToString("F1")
             + " routeMiles=" + DeadheadRouteMiles.ToString("F3") + " (odometer: 1 unit = 1 m, no compression)");
         BuildTruckInteractions();
@@ -842,7 +846,10 @@ public class GameFlow : MonoBehaviour
                 + " MI DRIVEN · ARR " + (deadheadArrived ? deadheadArrivalClock : "--:--")
                 + "   ·   LOADED 240 MI · $2,450";
         if (endDebrief != null)
+        {
             endDebrief.text = BuildDebrief();
+            Debug.Log("D2D DEBRIEF " + endDebrief.text);
+        }
     }
 
     // Safety, Procedure and Efficiency are reported separately. A fast or
