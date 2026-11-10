@@ -14,6 +14,7 @@ public class MirrorView : MonoBehaviour
 
     Camera cam;
     RenderTexture rt;
+    Material mat;
 
     void Start()
     {
@@ -47,6 +48,7 @@ public class MirrorView : MonoBehaviour
         cam.cullingMask &= ~(1 << 8);   // DriverBody
 
         var mat = new Material(shader);
+        this.mat = mat;
         mat.name = name + "_Mat";
         mat.mainTexture = rt;
         // A mirror flips left and right; the rear-facing camera alone would read
@@ -78,6 +80,14 @@ public class MirrorView : MonoBehaviour
 
     void OnDestroy()
     {
-        if (rt != null) rt.Release();
+        // Both the render texture and the material are runtime-created, so a
+        // scene reload would otherwise leak them.
+        if (rt != null)
+        {
+            rt.Release();
+            Destroy(rt);
+        }
+        if (mat != null) Destroy(mat);
+        if (cam != null && cam.gameObject != null) Destroy(cam.gameObject);
     }
 }
