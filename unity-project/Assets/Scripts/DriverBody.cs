@@ -131,9 +131,11 @@ public class DriverBody : MonoBehaviour
         get => visible;
         set
         {
-            if (visible == value) return;
             visible = value;
+            if (model == null) return;
             if (rends == null) rends = model.GetComponentsInChildren<Renderer>(true);
+            // Always apply: a previous CineShot or menu may have disabled the
+            // renderers without changing the cached bool.
             foreach (var r in rends) if (r != null) r.enabled = value;
         }
     }

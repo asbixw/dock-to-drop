@@ -2111,7 +2111,11 @@ public class GameFlow : MonoBehaviour
             Player.body.ForceHead = false;
             // Never resurrect the driver body while the title camera owns the
             // view; the menu restores it in EndMenuView.
-            if (!Player.MenuView) Player.body.model.gameObject.SetActive(true);
+            if (!Player.MenuView)
+            {
+                Player.body.model.gameObject.SetActive(true);
+                Player.body.Visible = true;
+            }
         }
         Player.SetUILock(false);
     }
