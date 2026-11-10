@@ -31,7 +31,11 @@ public static class WorldBuilder
     static Material lotAsphalt, wornYellow, wornWhite;
     static Material asphalt, roadLine, yardConcrete, lotConcrete, dockConcrete, dirt, siding, warehouseBase, joint, grass, yardAsphalt, wood;
     static Material whitePaint, offWhite, yellowPaint, metal, chrome, dark, glass, orange, orangeGlow, blue, navy, red, green, skin, fabric, concreteDark;
-    static Texture2D asphaltD, asphaltR, concD, concR;
+    // Diffuse and the normal map chosen to match it (Poly Haven scan or the
+    // procedural fallback), so every surface pairs the right maps.
+    static Texture2D asphaltD, asphaltN, concD, concN;
+    // Gate trigger in Destination-local space (see BuildGate).
+    const float GateTriggerZ = 188f, GateTriggerHalf = 5f;
 
     public static WorldRefs Build(GameFlow flow, Transform parent)
     {
@@ -57,8 +61,7 @@ public static class WorldBuilder
         float route = flow.DeadheadAssignedMiles * 1609.344f;
         var hull = refs.truck.GetComponent<BoxCollider>();
         float nose = hull != null ? hull.center.z + hull.size.z * 0.5f : 0f;
-        const float gateTriggerZ = 188f, gateTriggerHalf = 5f;
-        float contactLocal = gateTriggerZ - gateTriggerHalf - nose;
+        float contactLocal = GateTriggerZ - GateTriggerHalf - nose;
         float destOffset = route + refs.truck.transform.position.z - contactLocal;
         refs.routeLength = route;
 
@@ -69,8 +72,8 @@ public static class WorldBuilder
         BuildAmazon(flow, dest, refs);
         BuildGate(flow, dest, refs);
         BuildYardProps(dest);
+        BuildYardSurroundings(dest);
         dest.position = new Vector3(0f, 0f, destOffset);
-        RelocateYardDressing(root, dest, destOffset);
         BuildHighway(root, destOffset);
         Debug.Log("D2D ROUTE length=" + route.ToString("F1") + "m (" + flow.DeadheadAssignedMiles
             + " mi) gateZ=" + (destOffset + 205f).ToString("F1") + " destOffset=" + destOffset.ToString("F1"));
@@ -138,6 +141,7 @@ public static class WorldBuilder
         // replace the procedural maps when present.
         if (T("ph_asphalt") != null) { asphaltD = T("ph_asphalt"); asphaltNrm = T("ph_asphalt_nor"); }
         if (T("ph_concrete") != null) { concD = T("ph_concrete"); concNrm = T("ph_concrete_nor"); }
+        asphaltN = asphaltNrm; concN = concNrm;
         foreach (var gt in new[] { asphaltD, asphaltNrm, concD, concNrm }) if (gt != null) gt.anisoLevel = 8;
 
         // 1024 px seamless textures, tiled so one repeat covers roughly 4 m.
@@ -332,10 +336,10 @@ public static class WorldBuilder
         float end = destOffset + 430f;
         float len = Mathf.Max(1f, end - start);
         var g = new GameObject("Highway").transform; g.SetParent(root, false);
-        var hwAsphalt = MeshFactory.TexMat("HighwayAsphalt", asphaltD, T("asphalt_hq_n"), new Vector2(4f, len / 4f), 0.06f);
+        var hwAsphalt = MeshFactory.TexMat("HighwayAsphalt", asphaltD, asphaltN, new Vector2(4f, len / 4f), 0.06f);
         Tint(hwAsphalt, new Color(1f, 1f, 1f));
         Bump(hwAsphalt, 0.34f);
-        var hwShoulder = MeshFactory.TexMat("HighwayShoulder", concD, T("concrete_hq_n"), new Vector2(2f, len / 3f), 0.10f);
+        var hwShoulder = MeshFactory.TexMat("HighwayShoulder", concD, concN, new Vector2(2f, len / 3f), 0.10f);
         var hwDirt = MeshFactory.Mat("HighwayDirt", new Color(0.56f, 0.50f, 0.40f), 0f, 0.06f);
         var centre = MeshFactory.Mat("HighwayCentre", new Color(0.82f, 0.66f, 0.22f), 0f, 0.34f);
 
@@ -359,14 +363,28 @@ public static class WorldBuilder
             MeshFactory.Box("Delineator", new Vector3(0.12f, 1.05f, 0.12f), new Vector3(side * 7.8f, 0.60f, z), whitePaint, g, false);
             MeshFactory.Box("DelineatorReflector", new Vector3(0.16f, 0.14f, 0.02f), new Vector3(side * 7.8f, 0.95f, z - 0.07f), orangeGlow, g, false);
         }
+        // Each board shows the miles still to go to the gate trigger face, the
+        // same point the odometer measures to. (The old countdown started one
+        // mile high, so the board a mile out read "2 MI" and one sat at the gate.)
+        float gateFaceZ = destOffset + GateTriggerZ - GateTriggerHalf;
+        // "AMAZON DFW9 / 2 MILES" guide sign, placed two real miles before the
+        // gate. It used to stand 126 m from the start of a 32/60-mile deadhead.
+        var hs = new GameObject("HighwaySign").transform; hs.SetParent(g, false); hs.position = new Vector3(14f, 0, Mathf.Max(start + 100f, gateFaceZ - 2f * 1609.344f));   // posts clear of the 3 m shoulder
+        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, true);
+        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, true);
+        MeshFactory.Box("SignPanel", new Vector3(8.1f, 2.9f, 0.16f), new Vector3(0, 4.2f, 0), green, hs, false);
+        SignQuad("HighwaySignTex", "highway_sign", 7.7f, 2.55f, new Vector3(0f, 4.2f, -0.10f), 0f, hs);
+
         int miles = Mathf.Max(1, Mathf.RoundToInt((end - start) / 1609.344f));
         for (int mi = 1; mi <= miles; mi++)
         {
             float z = 8f + mi * 1609.344f;
             if (z > end - 30f) break;
+            int toGo = Mathf.RoundToInt((gateFaceZ - z) / 1609.344f);
+            if (toGo < 1) break;
             MeshFactory.Cyl("MilePost", 0.06f, 1.5f, new Vector3(9.2f, 0.75f, z), metal, g, false);
             MeshFactory.Box("MilePlate", new Vector3(0.78f, 0.34f, 0.05f), new Vector3(9.2f, 1.45f, z - 0.03f), green, g, false);
-            var t = MeshFactory.Text3D("MileText", "DFW9  " + (miles - mi + 1) + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
+            var t = MeshFactory.Text3D("MileText", "DFW9  " + toGo + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
             MeshFactory.FaceBack(t);
         }
     }
@@ -487,22 +505,37 @@ public static class WorldBuilder
         var wtTxt = MeshFactory.Text3D("TowerText", "DFW9", new Vector3(0f, 21.3f, -4.72f), 0.95f, new Color(0.12f, 0.20f, 0.30f), wt);
         MeshFactory.FaceBack(wtTxt);
 
-        // Yard dressing (staged trailers, container stacks, staff cars) belongs
-        // to the yard, not to the highway that now runs past it. It is built
-        // here and relocated to the Destination root once that exists.
-        var dressing = new GameObject("YardDressing").transform; dressing.SetParent(g, false);
+        for (int i = 0; i < 20; i++)
+        {
+            float x = -330 + i * 37f;
+            float z = -90 - (i % 4) * 30f;
+            if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
+            Tree(g, new Vector3(x, 0, z), 1.3f + (i % 3) * 0.24f);
+        }
+        for (int i = 0; i < 8; i++)
+            Tree(g, new Vector3(-130 + i * 9f, 0, -58 - (i % 2) * 12f), 0.9f + (i % 3) * 0.2f);
+    }
 
+    // Staged trailers, container stacks, staff cars, the perimeter tree rows
+    // and the fence-line scrub belong to the Amazon yard. They used to be built
+    // under the world root at the yard's old coordinates, so once the yard moved
+    // to the end of the real deadhead they were left floating beside the start
+    // of the highway. Built here while Destination is still at the origin, they
+    // travel with the yard.
+    static void BuildYardSurroundings(Transform dest)
+    {
+        var g = new GameObject("YardSurroundings").transform; g.SetParent(dest, false);
         // Rows of staged trailers at the edges of the yard.
-        for (int i = 0; i < 3; i++) ParkedTrailer(dressing, new Vector3(-78 + i * 4.1f, 0, 252), 0f, i % 2 == 0);
-        for (int i = 0; i < 3; i++) ParkedTrailer(dressing, new Vector3(94 + i * 4.1f, 0, 250), 0f, i % 2 == 1);
+        for (int i = 0; i < 3; i++) ParkedTrailer(g, new Vector3(-78 + i * 4.1f, 0, 252), 0f, i % 2 == 0);
+        for (int i = 0; i < 3; i++) ParkedTrailer(g, new Vector3(94 + i * 4.1f, 0, 250), 0f, i % 2 == 1);
 
         // stacked containers in the far corners
-        ContainerStack(dressing, new Vector3(-88, 0, 312), 2);
-        ContainerStack(dressing, new Vector3(96, 0, 318), 2);
+        ContainerStack(g, new Vector3(-88, 0, 312), 2);
+        ContainerStack(g, new Vector3(96, 0, 318), 2);
 
         // staff cars at the office end
         for (int i = 0; i < 3; i++)
-            Car(dressing, new Vector3(-96 + i * 4.0f, 0, 268 + (i % 2) * 3.5f), 90f + i * 3f,
+            Car(g, new Vector3(-96 + i * 4.0f, 0, 268 + (i % 2) * 3.5f), 90f + i * 3f,
                 i == 0 ? new Color(0.16f, 0.18f, 0.22f) : (i == 1 ? new Color(0.44f, 0.10f, 0.08f) : new Color(0.62f, 0.62f, 0.58f)));
 
         // more trees along the perimeter to soften the horizon
@@ -523,41 +556,30 @@ public static class WorldBuilder
             if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
             Tree(g, new Vector3(x, 0, z), 1.35f + (i % 3) * 0.2f);
         }
-        for (int i = 0; i < 20; i++)
-        {
-            float x = -330 + i * 37f;
-            float z = -90 - (i % 4) * 30f;
-            if (z > 217.5f && Mathf.Abs(x) < 14.5f) continue;
-            Tree(g, new Vector3(x, 0, z), 1.3f + (i % 3) * 0.24f);
-        }
-        for (int i = 0; i < 8; i++)
-            Tree(g, new Vector3(-130 + i * 9f, 0, -58 - (i % 2) * 12f), 0.9f + (i % 3) * 0.2f);
         // low scrub along the fence lines breaks up the flat Texas horizon
         for (int i = 0; i < 26; i++)
         {
             float x = -160 + i * 25f;
-            if (Mathf.Abs(x) < 14.5f) continue;
+            if (Mathf.Abs(x) < 14.5f) continue;   // keep the gate approach clear
             MeshFactory.Sphere("Scrub", 1.4f + (i % 4) * 0.22f, new Vector3(x, 0.55f, 208 + (i % 2) * 2f), green, g);
         }
-    }
 
-    // The yard dressing above was authored in yard coordinates, so it has to
-    // travel with the yard. Move it under the Destination root and shift it by
-    // the same offset, so it lands on the yard slab at the end of the highway.
-    static void RelocateYardDressing(Transform root, Transform dest, float offset)
-    {
-        var horizon = root.Find("Horizon");
-        if (horizon == null) return;
-        var dressing = horizon.Find("YardDressing");
-        if (dressing == null) return;
-        var kids = new List<Transform>();
-        foreach (Transform c in dressing) kids.Add(c);
-        foreach (var c in kids)
-        {
-            c.SetParent(dest, true);
-            c.position = c.position + new Vector3(0f, 0f, offset);
-        }
-        dressing.gameObject.SetActive(false);
+        // Speed limit 15 on the gate approach, set back from the lane so it
+        // doesn't block the booth. It used to stay beside the travel center
+        // when the gate moved to the end of the deadhead.
+        var sp = new GameObject("SpeedSign").transform; sp.SetParent(g, false); sp.localPosition = new Vector3(-10.4f, 0, 191f);
+        MeshFactory.Cyl("Post", 0.07f, 3.3f, new Vector3(0, 1.65f, 0), metal, sp, false);
+        var spc = sp.gameObject.AddComponent<CapsuleCollider>(); spc.radius = 0.14f; spc.height = 3.3f; spc.center = new Vector3(0f, 1.65f, 0f);
+        MeshFactory.Box("Board", new Vector3(1.15f, 1.55f, 0.08f), new Vector3(0, 3.0f, 0), whitePaint, sp, false);
+        // One opaque face only. The old Sprites/Default quad was transparent and
+        // double-sided, which let the face paint itself a second time over the
+        // white backing and read as "1515".
+        var speedTex = T("speed_15");
+        if (speedTex != null)
+            MeshFactory.Quad("Speed15", new Vector2(1.1f, 1.5f), new Vector3(0f, 3.0f, -0.055f),
+                Quaternion.identity, MeshFactory.SignOpaqueMat("Speed15Mat", speedTex, Color.white), sp);
+        else Debug.LogWarning("D2D missing texture speed_15");
+
     }
 
     static void ParkedTrailer(Transform parent, Vector3 pos, float yaw, bool hasLogo)
@@ -790,27 +812,6 @@ public static class WorldBuilder
                         wire.transform.localRotation = Quaternion.LookRotation(b - a);
                     }
         }
-
-        // highway sign with Amazon DFW9
-        var hs = new GameObject("HighwaySign").transform; hs.SetParent(g, false); hs.position = new Vector3(12.5f, 0, 126f);
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(-2.8f, 2.6f, 0), metal, hs, true);
-        MeshFactory.Box("SignPost", new Vector3(0.22f, 5.2f, 0.22f), new Vector3(2.8f, 2.6f, 0), metal, hs, true);
-        MeshFactory.Box("SignPanel", new Vector3(8.1f, 2.9f, 0.16f), new Vector3(0, 4.2f, 0), green, hs, false);
-        SignQuad("HighwaySignTex", "highway_sign", 7.7f, 2.55f, new Vector3(0f, 4.2f, -0.10f), 0f, hs);
-
-        // speed limit 15, set back from the gate lane so it doesn't block the booth
-        var sp = new GameObject("SpeedSign").transform; sp.SetParent(g, false); sp.position = new Vector3(-10.4f, 0, 191f);
-        MeshFactory.Cyl("Post", 0.07f, 3.3f, new Vector3(0, 1.65f, 0), metal, sp, false);
-        var spc = sp.gameObject.AddComponent<CapsuleCollider>(); spc.radius = 0.14f; spc.height = 3.3f; spc.center = new Vector3(0f, 1.65f, 0f);
-        MeshFactory.Box("Board", new Vector3(1.15f, 1.55f, 0.08f), new Vector3(0, 3.0f, 0), whitePaint, sp, false);
-        // One opaque face only. The old Sprites/Default quad was transparent and
-        // double-sided, which let the face paint itself a second time over the
-        // white backing and read as "1515".
-        var speedTex = T("speed_15");
-        if (speedTex != null)
-            MeshFactory.Quad("Speed15", new Vector2(1.1f, 1.5f), new Vector3(0f, 3.0f, -0.055f),
-                Quaternion.identity, MeshFactory.SignOpaqueMat("Speed15Mat", speedTex, Color.white), sp);
-        else Debug.LogWarning("D2D missing texture speed_15");
 
         // small mile marker
         var mm = new GameObject("MileMarker").transform; mm.SetParent(g, false); mm.position = new Vector3(-9.2f, 0, 160f);
@@ -1770,17 +1771,21 @@ public static class WorldBuilder
         // jersey barriers closing off the west edge of the lot
         for (int i = 0; i < 8; i++)
             PropLibrary.Spawn("JerseyBarrier", OnGround(-36.5f, 4f + i * 3.3f), 90f + (i % 2) * 2f, 2.0f, g, true);
-        // yard: boxes by the dumpster, a covered car in the staff lot
-        Vector3 box = OnGround(-81.2f, 326.4f);
+        // yard: boxes by the dumpster, a covered car in the staff lot.
+        // PropLibrary.Spawn places in world space and Destination has already
+        // been moved to the end of the highway, so convert the authored
+        // yard-local points (SurfaceY uses yard-local coordinates) first.
+        Vector3 Y(Vector3 local) { return yard != null ? yard.TransformPoint(local) : local; }
+        Vector3 box = Y(OnGround(-81.2f, 326.4f));
         for (int i = 0; i < 5; i++)
             PropLibrary.Spawn("CardboardBox", new Vector3(box.x + (i % 3) * 0.55f, box.y + (i / 3) * 0.34f, box.z), i * 23f, 1.4f, yg);
-        PropLibrary.Spawn("CoveredCar", OnGround(-96.5f, 245f), 8f, 1.05f, yg, true);
+        PropLibrary.Spawn("CoveredCar", Y(OnGround(-96.5f, 245f)), 8f, 1.05f, yg, true);
         // scrub along the yard fence and the road verges
         for (int i = 0; i < 18; i++)
         {
             float z = 212f + i * 9.5f;
-            PropLibrary.Spawn(shrubs[i % 4], OnGround(-107f + (i % 3) * 0.8f, z), i * 53f, 0.9f + (i % 4) * 0.15f, yg);
-            PropLibrary.Spawn(shrubs[(i + 2) % 4], OnGround(158f - (i % 3) * 0.8f, z + 4f), i * 71f, 0.9f + (i % 3) * 0.18f, yg);
+            PropLibrary.Spawn(shrubs[i % 4], Y(OnGround(-107f + (i % 3) * 0.8f, z)), i * 53f, 0.9f + (i % 4) * 0.15f, yg);
+            PropLibrary.Spawn(shrubs[(i + 2) % 4], Y(OnGround(158f - (i % 3) * 0.8f, z + 4f)), i * 71f, 0.9f + (i % 3) * 0.18f, yg);
         }
         for (int i = 0; i < 24; i++)
         {
@@ -1901,7 +1906,10 @@ public static class WorldBuilder
         // ---- yard: pallets, chocks and dock lights at the doors
         void PalletStack(Vector3 p, int layers, float yaw)
         {
-            var s = new GameObject("PalletStack").transform; s.SetParent(yg, false); s.position = p; s.rotation = Quaternion.Euler(0f, yaw, 0f);
+            // p is yard-local: Destination has already been moved to the far
+            // end of the highway, so a world position would leave the pallets
+            // beside the travel center.
+            var s = new GameObject("PalletStack").transform; s.SetParent(yg, false); s.localPosition = p; s.localRotation = Quaternion.Euler(0f, yaw, 0f);
             for (int k = 0; k < layers; k++)
             {
                 float y = 0.075f + k * 0.15f;

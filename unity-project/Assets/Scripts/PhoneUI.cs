@@ -19,20 +19,18 @@ public class PhoneUI : MonoBehaviour
     RectTransform body;
     GameObject loadView, chatView, photosView, cameraView, previewView, callView;
     Text callName, callText, callStatus, cameraHint, previewStatus;
-    RawImage previewImage, cameraPreview;
+    RawImage previewImage;
     RectTransform photosGrid;
     Button sendButton;
     bool previewValid;
     Button callAnswer, callDecline, callNext;
     Texture2D lastPhoto;
-    bool callAnswered;
     bool cameraActive;
     bool previewOpen;
     bool fovSaved;
     float gameplayFov = 68f;
     Action onAnswer, onDecline, onNext;
     readonly List<Texture2D> photos = new List<Texture2D>();
-    Text chatBody;
     Text photosHint;
     RectTransform chatContent;
     Button[] tabButtons;
@@ -326,7 +324,7 @@ public class PhoneUI : MonoBehaviour
         UIFactory.BottomCenter(callName.rectTransform, new Vector2(0, 712), new Vector2(1100, 86));
         callText = UIFactory.Label(callView.transform, "Text", "", 36, new Color(0.90f, 0.94f, 0.97f), TextAnchor.MiddleCenter);
         UIFactory.BottomCenter(callText.rectTransform, new Vector2(0, 470), new Vector2(1000, 200));
-        var answer = UIFactory.Button(callView.transform, "Answer", "ANSWER", new Vector2(340, 108), Vector2.zero, new Color(0.12f, 0.75f, 0.42f), Color.white, 34, () => { callAnswered = true; onAnswer?.Invoke(); });
+        var answer = UIFactory.Button(callView.transform, "Answer", "ANSWER", new Vector2(340, 108), Vector2.zero, new Color(0.12f, 0.75f, 0.42f), Color.white, 34, () => { onAnswer?.Invoke(); });
         answer.GetComponent<RectTransform>().anchorMin = answer.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0);
         answer.GetComponent<RectTransform>().anchoredPosition = new Vector2(-195, 230);
         callAnswer = answer;
@@ -423,7 +421,7 @@ public class PhoneUI : MonoBehaviour
 
     public void ShowIncomingCall(Action answer, Action decline)
     {
-        onAnswer = answer; onDecline = decline; onNext = null; callAnswered = false;
+        onAnswer = answer; onDecline = decline; onNext = null;
         root.SetActive(true);
         if (dimImage != null) dimImage.enabled = false;
         phone.gameObject.SetActive(false);
@@ -445,7 +443,6 @@ public class PhoneUI : MonoBehaviour
 
     public void BeginCallAnswered()
     {
-        callAnswered = true;
         callStatus.text = "CONNECTED  ·  RELAY DISPATCH";
         callAnswer.gameObject.SetActive(false);
         callDecline.gameObject.SetActive(false);
