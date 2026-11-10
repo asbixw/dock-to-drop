@@ -1286,7 +1286,10 @@ public class GameFlow : MonoBehaviour
         deadheadActive = false;
         deadheadArrivalClock = ClockNow;
         int scheduledEta = deadheadDepartMinutes + Mathf.CeilToInt(DeadheadRouteMiles * 60f / DeadheadMph);
-        deadheadOnTime = ShiftClockMinutes <= scheduledEta;
+        // A short or forced deadhead is not "on time": the assigned miles must
+        // actually be on the odometer.
+        deadheadOnTime = deadheadMiles >= DeadheadAssignedMiles - 0.05f
+            && ShiftClockMinutes <= scheduledEta;
         bool realRun = deadheadWorld > 5f;
         if (realRun) deadheadHoldUntil = Time.unscaledTime + 7f;
         UpdateTripHud();
