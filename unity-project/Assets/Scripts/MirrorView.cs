@@ -18,6 +18,17 @@ public class MirrorView : MonoBehaviour
     void Start()
     {
         if (truck == null) return;
+        // The built-in shader can be stripped from a player build. Try the
+        // mirror shader first, then Standard, and skip the material entirely
+        // rather than passing a null shader into Material.
+        var shader = Shader.Find("Unlit/Texture");
+        if (shader == null) shader = Shader.Find("Standard");
+        if (shader == null)
+        {
+            Debug.LogWarning("D2D MIRROR no Unlit/Texture or Standard shader on " + name);
+            return;
+        }
+
         rt = new RenderTexture(width, height, 16, RenderTextureFormat.ARGB32);
         rt.name = name + "_RT";
         rt.Create();
@@ -35,8 +46,6 @@ public class MirrorView : MonoBehaviour
         cam.enabled = false;
         cam.cullingMask &= ~(1 << 8);   // DriverBody
 
-        var shader = Shader.Find("Unlit/Texture");
-        if (shader == null) Debug.LogWarning("D2D MIRROR Unlit/Texture shader missing on " + name);
         var mat = new Material(shader);
         mat.name = name + "_Mat";
         mat.mainTexture = rt;
