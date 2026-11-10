@@ -35,7 +35,7 @@ public static class UIFactory
 
     public static void EnsureEventSystem()
     {
-        if (Object.FindObjectOfType<EventSystem>() != null) return;
+        if (Object.FindAnyObjectByType<EventSystem>() != null) return;
         var go = new GameObject("EventSystem");
         go.AddComponent<EventSystem>();
         go.AddComponent<StandaloneInputModule>();
@@ -127,9 +127,15 @@ public static class UIFactory
         return i;
     }
 
+    // Every panel and button used to bake its own 128x128 texture. The sprite
+    // is always white (tinted by Image.color), so one per size/radius is enough.
+    static readonly System.Collections.Generic.Dictionary<int, Sprite> roundedCache = new System.Collections.Generic.Dictionary<int, Sprite>();
+
     public static Sprite RoundedSprite(Color color, int size, int radius)
     {
         int safeRadius = Mathf.Clamp(radius, 2, size / 2 - 2);
+        int key = size * 4096 + safeRadius;
+        if (roundedCache.TryGetValue(key, out var cached) && cached != null) return cached;
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         tex.wrapMode = TextureWrapMode.Clamp;
         var cols = new Color32[size * size];
@@ -143,7 +149,9 @@ public static class UIFactory
         }
         tex.SetPixels32(cols); tex.Apply();
         var border = new Vector4(safeRadius, safeRadius, safeRadius, safeRadius);
-        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+        var sprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+        roundedCache[key] = sprite;
+        return sprite;
     }
 
     public static void Stretch(RectTransform rt, float left, float right, float top, float bottom)

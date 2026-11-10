@@ -20,4 +20,10 @@ public class CinematicGrade : MonoBehaviour
         }
         Graphics.Blit(src, dst, mat);
     }
+
+    void OnDestroy()
+    {
+        // HideAndDontSave materials are never collected on their own.
+        if (mat != null) Destroy(mat);
+    }
 }

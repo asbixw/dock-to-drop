@@ -36,7 +36,6 @@ public static class PropLibrary
         // -90 deg about X, and overwriting it laid every tree on its side.
         go.transform.rotation = Quaternion.Euler(0f, yaw, 0f) * p.transform.rotation;
         go.transform.localScale = p.transform.localScale * scale;
-        bool small = name.StartsWith("Shrub") || name.StartsWith("Bush") || name == "CardboardBox" || name == "Tyre";
         foreach (var r in go.GetComponentsInChildren<Renderer>(true))
         {
             var ms = r.sharedMaterials;
@@ -44,7 +43,6 @@ public static class PropLibrary
             r.sharedMaterials = ms;
             r.shadowCastingMode = ShadowCastingMode.On;
             r.receiveShadows = true;
-            if (small) r.shadowCastingMode = ShadowCastingMode.On;
         }
         if (collider)
         {
