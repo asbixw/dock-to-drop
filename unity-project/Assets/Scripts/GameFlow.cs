@@ -706,7 +706,7 @@ public class GameFlow : MonoBehaviour
     void UpdateBackingLesson()
     {
         var rig = Rig;
-        if (rig == null || Truck == null || !started || ended || !gatePassed || Player == null || !Player.IsSeated)
+        if (rig == null || Truck == null || !started || ended || Player == null || !Player.IsSeated)
         {
             if (backingActive) HideBackingLesson();
             return;

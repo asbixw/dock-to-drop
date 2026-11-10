@@ -75,6 +75,18 @@ public static class WorldBuilder
         BuildYardProps(dest);
         BuildYardSurroundings(dest);
         dest.position = new Vector3(0f, 0f, destOffset);
+
+        // The trailer the shift pre-trips and hooks is staged in the house lot,
+        // not at the Amazon yard. The yard is the destination of the deadhead.
+        if (refs.trailerRig != null)
+        {
+            var rig = refs.trailerRig;
+            rig.transform.SetParent(root, true);
+            rig.transform.position = new Vector3(-12f, 0.11f, 30f);
+            rig.transform.rotation = Quaternion.identity;
+            rig.SetParkedPose(rig.transform.position, rig.transform.rotation);
+        }
+
         BuildHighway(root, destOffset);
         Debug.Log("D2D ROUTE length=" + route.ToString("F1") + "m (" + flow.DeadheadAssignedMiles
             + " mi) gateZ=" + (destOffset + 205f).ToString("F1") + " destOffset=" + destOffset.ToString("F1"));
@@ -884,7 +896,8 @@ public static class WorldBuilder
         var truckRoot = new GameObject("Freightliner_Cascadia").transform;
         truckRoot.SetParent(root, false);
         // 0.085 lot surface minus the 0.011 tyre-bottom offset measured from the FBX.
-        truckRoot.position = new Vector3(0, 0.074f, 8);
+        // Parked in the driveway of the house where the shift starts.
+        truckRoot.position = new Vector3(-12f,  0.074f, 16f);
         truckRoot.rotation = Quaternion.identity;
         var model = Object.Instantiate(prefab, truckRoot);
         model.name = "TruckVisual";

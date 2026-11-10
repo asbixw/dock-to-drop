@@ -18,8 +18,8 @@ public class TrailerRig : MonoBehaviour
     public bool coupled, tugPassed, linesConnected, gearUp, airSupplied;
     public bool Cranking { get; private set; }
     public float Articulation { get; private set; }     // degrees, tractor relative to trailer
-    public Vector3 ParkedLocalPosition { get; private set; }
-    public Quaternion ParkedLocalRotation { get; private set; }
+    public Vector3 ParkedWorldPosition { get; private set; }
+    public Quaternion ParkedWorldRotation { get; private set; }
 
     // measured, in this transform's space (nose toward -z, doors at +z)
     public Vector3 kingpinLocal;      // kingpin centre; y = underside of the upper coupler plate
@@ -59,8 +59,8 @@ public class TrailerRig : MonoBehaviour
     public void Init(GameFlow f)
     {
         flow = f;
-        ParkedLocalPosition = transform.localPosition;
-        ParkedLocalRotation = transform.localRotation;
+        ParkedWorldPosition = transform.position;
+        ParkedWorldRotation = transform.rotation;
         Bounds kp = default, plate = default, side = default, crank = default, feet = default;
         bool hasKp = false, hasPlate = false, hasSide = false, hasCrank = false, hasFeet = false;
         var wheelRends = new List<Renderer>();
@@ -371,6 +371,14 @@ public class TrailerRig : MonoBehaviour
         rollAng = rollVel = latAccel = 0f;
     }
 
+    // The staged spot can change (for example when the trailer is moved from
+    // the yard to the house lot), so the backing-lesson retry needs to learn it.
+    public void SetParkedPose(Vector3 position, Quaternion rotation)
+    {
+        ParkedWorldPosition = position;
+        ParkedWorldRotation = rotation;
+    }
+
     // Full backing-lesson reset: spring brakes back on, gear down, hoses
     // stowed, and the trailer restored to its staged spot under Destination.
     public void ResetForRetry()
@@ -383,14 +391,7 @@ public class TrailerRig : MonoBehaviour
         Cranking = false;
         gearTravel = 0f;
         if (tractor != null && tractor.lines != null) tractor.lines.Disconnect();
-        Vector3 p = ParkedLocalPosition;
-        Quaternion r = ParkedLocalRotation;
-        if (flow != null && flow.World != null && flow.World.destination != null)
-        {
-            p = flow.World.destination.TransformPoint(p);
-            r = flow.World.destination.rotation * r;
-        }
-        ResetPose(p, r);
+        ResetPose(ParkedWorldPosition, ParkedWorldRotation);
         ApplyGear();
     }
 
