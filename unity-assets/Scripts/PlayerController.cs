@@ -36,9 +36,7 @@ public class PlayerController : MonoBehaviour
     float bobPhase, bobAmount;
     float baseFov = -1f;
     bool thirdPerson;
-    Vector3 tpCamPos;
     bool tpInit;
-    float seatSwayYaw, seatSwayPitch;
     Vector3 seatHeadOffset;
     bool chaseCam;
     Vector3 chasePos;
