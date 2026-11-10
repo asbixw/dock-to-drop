@@ -65,6 +65,14 @@ public class AirLines : MonoBehaviour
         Rebuild();
     }
 
+    // Backing-lesson retry: put the hoses back on the cab and stop rebuilding
+    // the span to the trailer.
+    public void Disconnect()
+    {
+        target = null;
+        Stow();
+    }
+
     void Stow()
     {
         for (int i = 0; i < 3; i++)

@@ -18,6 +18,8 @@ public class TrailerRig : MonoBehaviour
     public bool coupled, tugPassed, linesConnected, gearUp, airSupplied;
     public bool Cranking { get; private set; }
     public float Articulation { get; private set; }     // degrees, tractor relative to trailer
+    public Vector3 ParkedLocalPosition { get; private set; }
+    public Quaternion ParkedLocalRotation { get; private set; }
 
     // measured, in this transform's space (nose toward -z, doors at +z)
     public Vector3 kingpinLocal;      // kingpin centre; y = underside of the upper coupler plate
@@ -57,6 +59,8 @@ public class TrailerRig : MonoBehaviour
     public void Init(GameFlow f)
     {
         flow = f;
+        ParkedLocalPosition = transform.localPosition;
+        ParkedLocalRotation = transform.localRotation;
         Bounds kp = default, plate = default, side = default, crank = default, feet = default;
         bool hasKp = false, hasPlate = false, hasSide = false, hasCrank = false, hasFeet = false;
         var wheelRends = new List<Renderer>();
@@ -365,6 +369,29 @@ public class TrailerRig : MonoBehaviour
         lastYaw = transform.eulerAngles.y;
         Articulation = 0f;
         rollAng = rollVel = latAccel = 0f;
+    }
+
+    // Full backing-lesson reset: spring brakes back on, gear down, hoses
+    // stowed, and the trailer restored to its staged spot under Destination.
+    public void ResetForRetry()
+    {
+        coupled = false;
+        tugPassed = false;
+        linesConnected = false;
+        gearUp = false;
+        airSupplied = false;
+        Cranking = false;
+        gearTravel = 0f;
+        if (tractor != null && tractor.lines != null) tractor.lines.Disconnect();
+        Vector3 p = ParkedLocalPosition;
+        Quaternion r = ParkedLocalRotation;
+        if (flow != null && flow.World != null && flow.World.destination != null)
+        {
+            p = flow.World.destination.TransformPoint(p);
+            r = flow.World.destination.rotation * r;
+        }
+        ResetPose(p, r);
+        ApplyGear();
     }
 
     void LateUpdate()

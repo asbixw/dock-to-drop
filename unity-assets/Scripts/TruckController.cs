@@ -104,6 +104,7 @@ public class TruckController : MonoBehaviour
     public float fifthWheelTop = 1.12f;
     public Vector3 FifthWheelLocal => new Vector3(0f, fifthWheelTop, FifthWheelZ);
     float tugOffset, tugHold, lastMissTime = -10f, lastHeldMsg = -10f;
+    public float LastCouplingOver, LastCouplingLateral, LastCouplingAngle;
     Renderer fifthWheelLamp;
     bool lampFound, lampOn;
 
@@ -254,6 +255,20 @@ public class TruckController : MonoBehaviour
         if (driverDoor != null) driverDoor.localRotation = doorOpenLocal;
         if (player != null) player.EnterTruck(seat);
         if (flow != null) flow.OnEnteredTruck();
+    }
+
+    // Backing-lesson retry: drop the coupling and put the tractor back at the
+    // start of the approach. The trailer is restored by TrailerRig.ResetForRetry.
+    public void ResetForBacking(Vector3 pos, Quaternion rot)
+    {
+        hooked = null;
+        tugOffset = 0f; tugHold = 0f;
+        speed = 0f; lastSpeed = 0f; yawRate = 0f;
+        throttleSmooth = 0f; brakeSmooth = 0f;
+        gear = 1; rpm = IdleRpm; reverse = false;
+        LastCouplingOver = LastCouplingLateral = LastCouplingAngle = 0f;
+        if (lines != null) lines.Disconnect();
+        transform.SetPositionAndRotation(pos, rot);
     }
 
     // force is for the scripted camera tour only; normal play must open the
@@ -633,6 +648,9 @@ public class TruckController : MonoBehaviour
         speed = 0f; throttleSmooth = 0f; yawRate = 0f;
         if (Mathf.Abs(lateral) <= 0.24f && angle <= 12f)
         {
+            LastCouplingOver = over;
+            LastCouplingLateral = lateral;
+            LastCouplingAngle = angle;
             hooked = hookTarget;
             tugOffset = 0f; tugHold = 0f;
             Debug.Log("D2D HITCH locked lateral=" + lateral.ToString("F2") + " angle=" + angle.ToString("F1") + " speed=" + hitSpeed.ToString("F2"));

@@ -1086,6 +1086,9 @@ public static class WorldBuilder
             var c = (s < 0 ? new Vector3(-1.4185f, 0f, 1.249f) : new Vector3(1.401f, 0f, 1.257f)) + rot * new Vector3(0f, 0f, -0.010f);
             var mainGlass = MeshFactory.Quad("MirrorGlass", new Vector2(0.205f, 0.36f), c + new Vector3(0f, 2.51f, 0f), rot, mirrorMat, truckRoot);
             var spotGlass = MeshFactory.Quad("MirrorConvex", new Vector2(0.205f, 0.17f), c + new Vector3(0f, 2.21f, 0f), rot, mirrorMat, truckRoot);
+            var mirror = mainGlass.AddComponent<MirrorView>();
+            mirror.truck = truckRoot;
+            mirror.side = s;
             if (s < 0 && driverDoor != null) { mainGlass.transform.SetParent(driverDoor, true); spotGlass.transform.SetParent(driverDoor, true); }
         }
         var belt = MeshFactory.Box("SeatBelt", new Vector3(0.055f, 1.05f, 0.022f), new Vector3(-1.12f, 2.76f, -0.22f), trim, truckRoot, false);

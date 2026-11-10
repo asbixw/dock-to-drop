@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -23,13 +24,14 @@ public class GameFlow : MonoBehaviour
     Image warningIconBg;
     RectTransform promptRect;
     GameObject promptPanel, subtitlePanel, guardPanel, endPanel, speedPanel, warningPanel, pausePanel;
+    Text sensitivityText;
     Coroutine warningRoutine;
     int warningPriority;
     float warningUntil;
     bool paused;
     GameObject endDim;
     GameObject[] hudBase;
-    Text guardText, endKicker, endSub, endInspect, endSeal, endTime, endNote;
+    Text guardText, endKicker, endSub, endInspect, endSeal, endTime, endNote, endDebrief;
     Coroutine subtitleRoutine;
     bool gateOpen, gatePassed, ended;
     bool guardOpen;
@@ -57,9 +59,20 @@ public class GameFlow : MonoBehaviour
     int hardBrakeCount;
     float lastHardBrakeAt = -10f;
     int engineRunningExits;
+    int kingpinMisses;
+    int guardWrongAttempts;
+    int deadheadDepartMinutes;
+    bool deadheadOnTime;
     // backing lesson (stage 3)
-    bool backingActive, backingPassed;
+    bool backingActive, backingPassed, backingResultShown, backingWasReversing;
     int backingContacts;
+    int backingAttempts;
+    float backingAlignment, backingStopDistance;
+    Vector3 backingStartPos;
+    Quaternion backingStartRot = Quaternion.identity;
+    float backingRefresh;
+    GameObject backingPanel;
+    Text backingText, backingResult;
     TrailerRig Rig => World != null ? World.trailerRig : null;
     bool InspectionDone => inspected >= 5 && sealPhotoSent;
     string DeadheadObjective => "Deadhead " + DeadheadAssignedMiles + " mi to Gate 1 · Amazon DFW9.";
@@ -171,6 +184,7 @@ public class GameFlow : MonoBehaviour
         World = WorldBuilder.Build(this, transform);
         Debug.Log("D2D WORLD built");
         BuildPlayer();
+        RefreshSensitivityLabel();
         Truck = World.truck;
         Truck.player = Player;
         Truck.audio = Audio;
@@ -503,6 +517,7 @@ public class GameFlow : MonoBehaviour
 
     public void OnKingpinMissed(float lateral, float angle)
     {
+        kingpinMisses++;
         string why = Mathf.Abs(lateral) > 0.24f
             ? "The kingpin is " + Mathf.RoundToInt(Mathf.Abs(lateral) * 100f) + " cm to the " + (lateral > 0f ? "right" : "left") + " of the jaws."
             : "You're coming in " + Mathf.RoundToInt(angle) + " degrees crooked.";
@@ -598,6 +613,7 @@ public class GameFlow : MonoBehaviour
                 trailerText.color = key == 0 ? new Color(0.62f, 0.66f, 0.70f) : key == 1 ? new Color(1f, 0.74f, 0.25f) : new Color(0.45f, 0.95f, 0.55f);
             }
         }
+        UpdateBackingLesson();
         // the shift ends when the rig rolls up to the gate with everything done
         if (!ended && rig.coupled && rig.airSupplied && Player.IsSeated)
         {
@@ -609,6 +625,104 @@ public class GameFlow : MonoBehaviour
                 else if (!departureWarned) { departureWarned = true; ShowWarning("Not yet: the inspection and the seal photo come first.", 3f, 1); }
             }
         }
+    }
+
+    void StartBackingLesson()
+    {
+        backingActive = true;
+        backingContacts = 0;
+        backingAttempts = 0;
+        backingResultShown = false;
+        backingWasReversing = false;
+        backingRefresh = 0f;
+        backingStartPos = Truck.transform.position;
+        backingStartRot = Truck.transform.rotation;
+        backingResult.text = "REVERSING TO THE KINGPIN\nUse both mirrors. Creep at walking pace.\nStraighten the tractor before the fifth wheel reaches the nose.";
+        if (backingPanel != null) backingPanel.SetActive(true);
+        ShowSubtitle("Backing lesson: reverse slowly, use both mirrors, and watch the trailer sweep.", 5f);
+        Debug.Log("D2D BACKING lesson start");
+    }
+
+    void FinishBackingLesson()
+    {
+        backingActive = false;
+        backingResultShown = true;
+        float lateral = Mathf.Abs(Truck.LastCouplingLateral);
+        float angle = Mathf.Abs(Truck.LastCouplingAngle);
+        float stop = Mathf.Abs(Truck.LastCouplingOver);
+        backingAlignment = lateral;
+        backingStopDistance = stop;
+        bool pass = backingContacts == 0 && lateral < 0.25f && angle < 10f && stop < 0.8f;
+        backingPassed = pass;
+        backingResult.text = (pass ? "BACKING PASS" : "BACKING NEEDS WORK")
+            + "\nCONTACTS " + backingContacts + " · ALIGN " + lateral.ToString("F2") + " M / " + angle.ToString("F0") + "°"
+            + "\nSTOP OFFSET " + stop.ToString("F2") + " M · PULL-UPS " + backingAttempts
+            + (pass ? "" : "\nPRESS R OR RETRY TO IMPROVE THE SCORE");
+        ShowSubtitle(pass ? "Clean backing. The kingpin is locked." : "The backing needs work. Retry to improve the score.", 4f);
+        if (Player != null) Player.ReleaseCursor();
+        Debug.Log("D2D BACKING pass=" + pass + " contacts=" + backingContacts
+            + " lateral=" + lateral.ToString("F2") + " angle=" + angle.ToString("F1")
+            + " stop=" + stop.ToString("F2") + " pullUps=" + backingAttempts);
+    }
+
+    void HideBackingLesson()
+    {
+        backingActive = false;
+        backingResultShown = false;
+        backingWasReversing = false;
+        if (backingPanel != null) backingPanel.SetActive(false);
+    }
+
+    public void RetryBacking()
+    {
+        if (Rig == null || Truck == null) return;
+        Truck.ResetForBacking(backingStartPos, backingStartRot);
+        Rig.ResetForRetry();
+        backingContacts = 0;
+        backingAttempts = 0;
+        backingResultShown = false;
+        backingWasReversing = false;
+        backingRefresh = 0f;
+        backingActive = true;
+        backingResult.text = "LESSON RESET\nPull up, then reverse slowly under the kingpin.";
+        if (backingPanel != null) backingPanel.SetActive(true);
+        ShowSubtitle("Backing lesson reset. Pull up, then reverse slowly under the kingpin.", 4f);
+        Debug.Log("D2D BACKING retry");
+    }
+
+    void UpdateBackingLesson()
+    {
+        var rig = Rig;
+        if (rig == null || Truck == null || !started || ended || !gatePassed || Player == null || !Player.IsSeated)
+        {
+            if (backingActive) HideBackingLesson();
+            return;
+        }
+        if (rig.coupled)
+        {
+            if (backingActive && !backingResultShown) FinishBackingLesson();
+            return;
+        }
+        bool near = Vector3.Distance(Truck.transform.position, rig.transform.position) < 45f;
+        if (!near)
+        {
+            if (backingActive) HideBackingLesson();
+            return;
+        }
+        if (!backingActive) StartBackingLesson();
+        bool reversing = Truck.speed < -0.15f;
+        if (backingWasReversing && Truck.speed > 0.4f) backingAttempts++;
+        backingWasReversing = reversing;
+        backingRefresh -= Time.unscaledDeltaTime;
+        if (backingRefresh > 0f) return;
+        backingRefresh = 0.15f;
+        Vector3 fifth = Truck.transform.TransformPoint(Truck.FifthWheelLocal);
+        float dist = Vector3.Distance(fifth, rig.KingpinWorld);
+        float align = Vector3.Angle(Truck.transform.forward, rig.Forward);
+        int mph = Mathf.RoundToInt(Mathf.Abs(Truck.speed) * 2.23694f);
+        backingText.text = "BACKING LESSON\nTO KINGPIN " + dist.ToString("F1") + " M · ALIGN " + align.ToString("F0")
+            + "° · SPEED " + mph + " MPH\nCONTACTS " + backingContacts + " · PULL-UPS " + backingAttempts
+            + " · RETRY RESETS THE LESSON";
     }
 
     public void OnGateApproach(TruckController truck)
@@ -636,6 +750,7 @@ public class GameFlow : MonoBehaviour
         Debug.Log("D2D GUARD answer=" + correct + " open=" + guardOpen + " passed=" + gatePassed);
         if (!correct)
         {
+            guardWrongAttempts++;
             guardText.text = "That's not what's on my sheet. Check the load app and give me the correct appointment and shipper.";
             Audio.PlayVoice("guard_01");
             return;
@@ -726,6 +841,44 @@ public class GameFlow : MonoBehaviour
             endNote.text = "DEADHEAD " + deadheadMiles.ToString("F2") + " / " + DeadheadAssignedMiles
                 + " MI DRIVEN · ARR " + (deadheadArrived ? deadheadArrivalClock : "--:--")
                 + "   ·   LOADED 240 MI · $2,450";
+        if (endDebrief != null)
+            endDebrief.text = BuildDebrief();
+    }
+
+    // Safety, Procedure and Efficiency are reported separately. A fast or
+    // efficient run never buys back a contact: the overall line is a safety
+    // hold whenever any of those events were recorded.
+    // PLACEHOLDER: confirm policy — the zero-contact standard and the score
+    // weights below are placeholders until the safety department signs off.
+    string BuildDebrief()
+    {
+        var rig = Rig;
+        int safety = Mathf.Clamp(100 - 25 * contactCount - 10 * hardBrakeCount
+            - 20 * engineRunningExits - 15 * backingContacts, 0, 100);
+        int steps = 8;
+        int done = (loadVerified ? 1 : 0)
+            + (inspected >= 5 ? 1 : 0)
+            + (sealPhotoSent ? 1 : 0)
+            + (gatePassed ? 1 : 0)
+            + (rig != null && rig.tugPassed ? 1 : 0)
+            + (rig != null && rig.linesConnected ? 1 : 0)
+            + (rig != null && rig.gearUp ? 1 : 0)
+            + (rig != null && rig.airSupplied ? 1 : 0);
+        int procedure = Mathf.RoundToInt(100f * done / steps);
+        float efficiency = DeadheadAssignedMiles > 0
+            ? Mathf.Clamp(deadheadMiles / DeadheadAssignedMiles * 100f, 0f, 100f) : 0f;
+        string overall = "READY TO ROLL";
+        if (contactCount > 0 || hardBrakeCount > 0 || engineRunningExits > 0 || backingContacts > 0)
+            overall = "SAFETY HOLD — SPEED DOES NOT OFFSET CONTACTS";
+        else if (done < steps || !deadheadArrived)
+            overall = "PROCEDURE INCOMPLETE";
+        return "SAFETY " + safety + "%   ·   PROCEDURE " + procedure + "%   ·   EFFICIENCY " + Mathf.RoundToInt(efficiency) + "%\n"
+            + "CONTACTS " + contactCount + " · HARD BRAKES " + hardBrakeCount + " · ENGINE-RUNNING EXITS " + engineRunningExits
+            + " · BACKING CONTACTS " + backingContacts + " · KINGPIN MISSES " + kingpinMisses + "\n"
+            + "INSPECTIONS " + inspected + "/5 · SEAL " + (sealPhotoSent ? "SENT" : "NOT SENT")
+            + " · GATE " + (gatePassed ? "CHECKED IN" : "MISSED")
+            + " · DEADHEAD " + (deadheadArrived ? (deadheadOnTime ? "ON TIME" : "LATE") : "NOT ARRIVED")
+            + "   ·   COMPANY STANDARD: 0 CONTACTS [PLACEHOLDER: confirm policy]   ·   " + overall;
     }
 
     public void Restart()
@@ -865,6 +1018,19 @@ public class GameFlow : MonoBehaviour
         if (!started || ended) return;
         if (IsAutomation) return;
         PauseGame();
+    }
+
+    void ChangeSensitivity(float delta)
+    {
+        if (Player == null) return;
+        Player.AdjustSensitivity(delta);
+        RefreshSensitivityLabel();
+    }
+
+    void RefreshSensitivityLabel()
+    {
+        if (sensitivityText != null && Player != null)
+            sensitivityText.text = "MOUSE SENSITIVITY  " + Player.Sensitivity.ToString("F1");
     }
 
     public void ResumeGame()
@@ -1060,6 +1226,7 @@ public class GameFlow : MonoBehaviour
             // Departure is when the truck first rolls, not when the key turns.
             deadheadActive = true;
             deadheadDepartClock = ClockNow;
+            deadheadDepartMinutes = ShiftClockMinutes;
         }
         if (step < 0.0005f) return;
         deadheadWorld += step;
@@ -1099,6 +1266,8 @@ public class GameFlow : MonoBehaviour
         deadheadArrived = true;
         deadheadActive = false;
         deadheadArrivalClock = ClockNow;
+        int scheduledEta = deadheadDepartMinutes + Mathf.CeilToInt(DeadheadRouteMiles * 60f / DeadheadMph);
+        deadheadOnTime = ShiftClockMinutes <= scheduledEta;
         bool realRun = deadheadWorld > 5f;
         if (realRun) deadheadHoldUntil = Time.unscaledTime + 7f;
         UpdateTripHud();
@@ -1170,7 +1339,8 @@ public class GameFlow : MonoBehaviour
             // panels keep the cursor for themselves; a click there must not
             // silently capture the mouse again.
             bool menuOpen = (Phone != null && Phone.IsOpen) || guardOpen;
-            if (!menuOpen && Input.GetMouseButtonDown(0))
+            if (!menuOpen && Input.GetMouseButtonDown(0)
+                && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject()))
             {
                 if (!Application.isFocused) ActivateSelf();
                 ResumeGame();
@@ -1224,6 +1394,8 @@ public class GameFlow : MonoBehaviour
             }
             if (!guardOpen) { PauseGame(); return; }
         }
+        if (backingResultShown && (Phone == null || !Phone.IsOpen) && Input.GetKeyDown(KeyCode.R))
+            RetryBacking();
         if (uiWantsCursor) return;
 
         if (Input.GetKeyDown(KeyCode.Tab) || Input.GetKeyDown(KeyCode.P)) TogglePhone();
@@ -1950,6 +2122,28 @@ public class GameFlow : MonoBehaviour
         s.useGraphicAlpha = true;
     }
 
+    // Backing lesson overlay: live distance/alignment, contact and pull-up
+    // counters, the score after the kingpin is captured, and a retry button.
+    void BuildBackingLesson()
+    {
+        var bp = UIFactory.Panel(hudRoot.transform, "BackingLesson", new Vector2(780, 196), Vector2.zero, new Color(0.025f, 0.04f, 0.06f, 0.92f), true, 18);
+        UIFactory.BottomCenter(bp.rectTransform, new Vector2(0, 156), new Vector2(780, 196));
+        backingPanel = bp.gameObject;
+
+        backingText = UIFactory.Label(bp.transform, "Text", "BACKING LESSON", 20, new Color(1f, 0.55f, 0.16f), TextAnchor.UpperLeft, FontStyle.Bold);
+        UIFactory.TopLeft(backingText.rectTransform, new Vector2(20, -14), new Vector2(740, 28));
+        backingResult = UIFactory.Label(bp.transform, "Result", "", 19, new Color(0.92f, 0.95f, 0.97f), TextAnchor.UpperLeft);
+        UIFactory.TopLeft(backingResult.rectTransform, new Vector2(20, -50), new Vector2(740, 108));
+
+        var retry = UIFactory.Button(bp.transform, "Retry", "RETRY", new Vector2(150, 46), Vector2.zero, new Color(0.10f, 0.16f, 0.20f), Color.white, 18, RetryBacking);
+        var rt = retry.GetComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(1f, 0f);
+        rt.anchoredPosition = new Vector2(-18, 14);
+
+        backingPanel.SetActive(false);
+    }
+
     void BuildHud()
     {
         hudCanvas = UIFactory.Canvas("HUD", 20, true, true);
@@ -1997,6 +2191,7 @@ public class GameFlow : MonoBehaviour
         UIFactory.TopLeft(tripEta.rectTransform, new Vector2(18, -108), new Vector2(344, 24));
         tripPanel = tp.gameObject;
         tripPanel.SetActive(false);
+        BuildBackingLesson();
 
         var phoneHint = UIFactory.Label(hudRoot.transform, "PhoneHint", "TAB  PHONE", 22, new Color(0.8f, 0.85f, 0.88f), TextAnchor.LowerRight, FontStyle.Bold);
         phoneHint.rectTransform.anchorMin = phoneHint.rectTransform.anchorMax = new Vector2(1, 0);
@@ -2084,9 +2279,11 @@ public class GameFlow : MonoBehaviour
     void BuildPause()
     {
         var dim = UIFactory.Full(hudRoot.transform, "Pause", new Color(0.006f, 0.010f, 0.016f, 0.62f));
-        dim.raycastTarget = true;
+        // The dim is not a button. Clicks on it resume through Update; only
+        // real UI (the sensitivity buttons) blocks that click.
+        dim.raycastTarget = false;
         pausePanel = dim.gameObject;
-        var box = UIFactory.Panel(dim.transform, "Box", new Vector2(600, 220), Vector2.zero, new Color(0.035f, 0.05f, 0.065f, 0.98f), true, 22);
+        var box = UIFactory.Panel(dim.transform, "Box", new Vector2(600, 320), Vector2.zero, new Color(0.035f, 0.05f, 0.065f, 0.98f), true, 22);
         box.rectTransform.anchorMin = box.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
         box.rectTransform.anchoredPosition = Vector2.zero;
         var title = UIFactory.Label(box.rectTransform, "Title", "PAUSED", 48, new Color(0.96f, 0.95f, 0.90f), TextAnchor.MiddleCenter, FontStyle.Bold);
@@ -2103,6 +2300,21 @@ public class GameFlow : MonoBehaviour
         note.rectTransform.anchorMin = note.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
         note.rectTransform.anchoredPosition = new Vector2(0, -20);
         note.rectTransform.sizeDelta = new Vector2(540, 50);
+
+        sensitivityText = UIFactory.Label(box.rectTransform, "Sensitivity", "MOUSE SENSITIVITY  2.0", 22, new Color(0.92f, 0.95f, 0.97f), TextAnchor.MiddleCenter, FontStyle.Bold);
+        sensitivityText.rectTransform.anchorMin = sensitivityText.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        sensitivityText.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        sensitivityText.rectTransform.anchoredPosition = new Vector2(0, -82);
+        sensitivityText.rectTransform.sizeDelta = new Vector2(540, 34);
+        var minus = UIFactory.Button(box.rectTransform, "SensMinus", "-", new Vector2(76, 50), Vector2.zero, new Color(0.10f, 0.16f, 0.20f), Color.white, 26, () => ChangeSensitivity(-0.2f));
+        minus.GetComponent<RectTransform>().anchorMin = minus.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0.5f);
+        minus.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 0.5f);
+        minus.GetComponent<RectTransform>().anchoredPosition = new Vector2(-90, -146);
+        var plus = UIFactory.Button(box.rectTransform, "SensPlus", "+", new Vector2(76, 50), Vector2.zero, new Color(0.10f, 0.16f, 0.20f), Color.white, 26, () => ChangeSensitivity(0.2f));
+        plus.GetComponent<RectTransform>().anchorMin = plus.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0.5f);
+        plus.GetComponent<RectTransform>().pivot = new Vector2(0.5f, 0.5f);
+        plus.GetComponent<RectTransform>().anchoredPosition = new Vector2(90, -146);
+
         pausePanel.SetActive(false);
     }
 
@@ -2168,6 +2380,10 @@ public class GameFlow : MonoBehaviour
         var note = UIFactory.Label(panel.rectTransform, "Note", "LOAD #D2D-0612   ·   DFW9 → DWH1   ·   240 MI   ·   $2,450", 26, new Color(0.68f, 0.77f, 0.83f), TextAnchor.UpperLeft);
         UIFactory.TopLeft(note.rectTransform, new Vector2(54, -478), new Vector2(1080, 38));
         endNote = note;
+
+        var debrief = UIFactory.Label(panel.rectTransform, "Debrief", "", 16, new Color(0.80f, 0.88f, 0.93f), TextAnchor.UpperLeft);
+        UIFactory.TopLeft(debrief.rectTransform, new Vector2(54, -420), new Vector2(1080, 58));
+        endDebrief = debrief;
 
         var b = UIFactory.Button(panel.rectTransform, "Restart", "DRIVE AGAIN", new Vector2(470, 88), Vector2.zero, new Color(1f, 0.48f, 0.10f), new Color(0.12f, 0.07f, 0.02f), 30, Restart);
         b.GetComponent<RectTransform>().anchorMin = b.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0);

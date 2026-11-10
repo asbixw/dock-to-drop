@@ -76,6 +76,7 @@ public class PlayerController : MonoBehaviour
     void Start()
     {
         yaw = transform.eulerAngles.y;
+        lookSensitivity = PlayerPrefs.GetFloat(SensitivityKey, 2.0f);
         LockCursor(true);
         // On foot the player starts in third person so the driver is visible;
         // automation keeps first person unless -thirdperson is passed.
@@ -305,9 +306,35 @@ public class PlayerController : MonoBehaviour
         ApplyCursor(false);
     }
 
+    public const string SensitivityKey = "D2D.MouseSensitivity";
+    public float Sensitivity
+    {
+        get { return lookSensitivity; }
+        set { SetSensitivity(value); }
+    }
+
+    public void SetSensitivity(float value)
+    {
+        lookSensitivity = Mathf.Clamp(value, 0.2f, 5f);
+        PlayerPrefs.SetFloat(SensitivityKey, lookSensitivity);
+        PlayerPrefs.Save();
+    }
+
+    public void AdjustSensitivity(float delta)
+    {
+        SetSensitivity(lookSensitivity + delta);
+    }
+
     public void CaptureCursor()
     {
         cursorFree = false;
+        // A menu, phone, guard panel or pause overlay owns the pointer. Closing
+        // or entering the cab must never steal it back while one of those is up.
+        if (uiLock || menuView)
+        {
+            ApplyCursor(false);
+            return;
+        }
         ApplyCursor(true);
     }
 

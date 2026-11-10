@@ -3,6 +3,24 @@
 Backups of the files as they were before coupling (plus the cab-pass HANDOFF/STATE) are in `backups/2026-11-07-coupling/`.
 `TrailerRig.cs`, `AirLines.cs` and `unity-assets/make_coupling_audio.py` are new files with no backup.
 
+## 2026-11-10: stages 3–5 — mirrors/backing lesson, debrief, pause/sensitivity
+
+- **`MirrorView.cs`** (new): each west-coast main mirror gets a 192×384 rear-facing camera that renders every
+  third frame to a texture on the glass, offset outward per side and flipped horizontally. The camera hides
+  `DriverBody` (layer 8) and is disabled except for the explicit `Render()` call.
+- **Backing lesson** (`GameFlow` + `TruckController` + `TrailerRig` + `AirLines`): automatic when seated within
+  45 m of A-14 after the gate opens. Overlay shows distance-to-kingpin, alignment angle, speed, contacts and
+  pull-ups. On kingpin capture it scores contacts, lateral/angle alignment and stop offset, marks
+  `backingPassed`, and offers RETRY (R key or button). Retry calls `TruckController.ResetForBacking` and
+  `TrailerRig.ResetForRetry` (spring brakes, gear down, hoses stowed, trailer restored under `Destination`).
+- **Debrief** (`GameFlow.BuildDebrief`): Safety, Procedure and Efficiency are separate lines; contact/hard-brake/
+  engine-running-exit/backing-contact events force a `SAFETY HOLD` regardless of efficiency. Company-standard
+  line is `// PLACEHOLDER: confirm policy`.
+- **Pause/sensitivity**: `PlayerController.SetSensitivity` persists `D2D.MouseSensitivity` in `PlayerPrefs`;
+  pause menu has +/- buttons. The pause dim no longer blocks clicks, and `CaptureCursor` will not lock while
+  `uiLock`/`menuView` is set.
+- Compile clean (`COMPILE OK`); no Play Mode available on this box.
+
 ## 2026-11-10: stage 2 — load handling + trailer turning sweep
 
 - **`TruckController`**: added `LoadState` (`Bobtail`/`Loaded`) and named constants: `BobtailMass` 9 t /
