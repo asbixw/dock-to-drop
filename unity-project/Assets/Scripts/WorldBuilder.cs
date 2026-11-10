@@ -31,7 +31,11 @@ public static class WorldBuilder
     static Material lotAsphalt, wornYellow, wornWhite;
     static Material asphalt, roadLine, yardConcrete, lotConcrete, dockConcrete, dirt, siding, warehouseBase, joint, grass, yardAsphalt, wood;
     static Material whitePaint, offWhite, yellowPaint, metal, chrome, dark, glass, orange, orangeGlow, blue, navy, red, green, skin, fabric, concreteDark;
-    static Texture2D asphaltD, asphaltR, concD, concR;
+    // Diffuse and the normal map chosen to match it (Poly Haven scan or the
+    // procedural fallback), so every surface pairs the right maps.
+    static Texture2D asphaltD, asphaltN, concD, concN;
+    // Gate trigger in Destination-local space (see BuildGate).
+    const float GateTriggerZ = 188f, GateTriggerHalf = 5f;
 
     public static WorldRefs Build(GameFlow flow, Transform parent)
     {
@@ -57,8 +61,7 @@ public static class WorldBuilder
         float route = flow.DeadheadAssignedMiles * 1609.344f;
         var hull = refs.truck.GetComponent<BoxCollider>();
         float nose = hull != null ? hull.center.z + hull.size.z * 0.5f : 0f;
-        const float gateTriggerZ = 188f, gateTriggerHalf = 5f;
-        float contactLocal = gateTriggerZ - gateTriggerHalf - nose;
+        float contactLocal = GateTriggerZ - GateTriggerHalf - nose;
         float destOffset = route + refs.truck.transform.position.z - contactLocal;
         refs.routeLength = route;
 
@@ -124,6 +127,7 @@ public static class WorldBuilder
         // replace the procedural maps when present.
         if (T("ph_asphalt") != null) { asphaltD = T("ph_asphalt"); asphaltNrm = T("ph_asphalt_nor"); }
         if (T("ph_concrete") != null) { concD = T("ph_concrete"); concNrm = T("ph_concrete_nor"); }
+        asphaltN = asphaltNrm; concN = concNrm;
         foreach (var gt in new[] { asphaltD, asphaltNrm, concD, concNrm }) if (gt != null) gt.anisoLevel = 8;
 
         // 1024 px seamless textures, tiled so one repeat covers roughly 4 m.
@@ -316,10 +320,10 @@ public static class WorldBuilder
         float end = destOffset + 430f;
         float len = Mathf.Max(1f, end - start);
         var g = new GameObject("Highway").transform; g.SetParent(root, false);
-        var hwAsphalt = MeshFactory.TexMat("HighwayAsphalt", asphaltD, T("asphalt_hq_n"), new Vector2(4f, len / 4f), 0.06f);
+        var hwAsphalt = MeshFactory.TexMat("HighwayAsphalt", asphaltD, asphaltN, new Vector2(4f, len / 4f), 0.06f);
         hwAsphalt.color = new Color(1f, 1f, 1f);
         hwAsphalt.SetFloat("_BumpScale", 0.34f);
-        var hwShoulder = MeshFactory.TexMat("HighwayShoulder", concD, T("concrete_hq_n"), new Vector2(2f, len / 3f), 0.10f);
+        var hwShoulder = MeshFactory.TexMat("HighwayShoulder", concD, concN, new Vector2(2f, len / 3f), 0.10f);
         var hwDirt = MeshFactory.Mat("HighwayDirt", new Color(0.56f, 0.50f, 0.40f), 0f, 0.06f);
         var centre = MeshFactory.Mat("HighwayCentre", new Color(0.82f, 0.66f, 0.22f), 0f, 0.34f);
 
@@ -343,14 +347,20 @@ public static class WorldBuilder
             MeshFactory.Box("Delineator", new Vector3(0.12f, 1.05f, 0.12f), new Vector3(side * 7.8f, 0.60f, z), whitePaint, g, false);
             MeshFactory.Box("DelineatorReflector", new Vector3(0.16f, 0.14f, 0.02f), new Vector3(side * 7.8f, 0.95f, z - 0.07f), orangeGlow, g, false);
         }
+        // Each board shows the miles still to go to the gate trigger face, the
+        // same point the odometer measures to. (The old countdown started one
+        // mile high, so the board a mile out read "2 MI" and one sat at the gate.)
+        float gateFaceZ = destOffset + GateTriggerZ - GateTriggerHalf;
         int miles = Mathf.Max(1, Mathf.RoundToInt((end - start) / 1609.344f));
         for (int mi = 1; mi <= miles; mi++)
         {
             float z = 8f + mi * 1609.344f;
             if (z > end - 30f) break;
+            int toGo = Mathf.RoundToInt((gateFaceZ - z) / 1609.344f);
+            if (toGo < 1) break;
             MeshFactory.Cyl("MilePost", 0.06f, 1.5f, new Vector3(9.2f, 0.75f, z), metal, g, false);
             MeshFactory.Box("MilePlate", new Vector3(0.78f, 0.34f, 0.05f), new Vector3(9.2f, 1.45f, z - 0.03f), green, g, false);
-            var t = MeshFactory.Text3D("MileText", "DFW9  " + (miles - mi + 1) + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
+            var t = MeshFactory.Text3D("MileText", "DFW9  " + toGo + " MI", new Vector3(9.2f, 1.45f, z - 0.07f), 0.16f, Color.white, g);
             MeshFactory.FaceBack(t);
         }
     }
