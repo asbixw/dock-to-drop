@@ -5,13 +5,16 @@ using System.Collections.Generic;
 // Recentering the world keeps the truck's coordinates small enough for stable
 // physics over a 32/60-mile (51-96 km) deadhead. When the truck strays past
 // the threshold, the whole world root (truck, trailer, destination, road
-// chunks) is shifted back by the truck's position; the player shifts with it
-// so the rig stays together. GameFlow consumes PendingShift to keep the
+// chunks) is shifted back by the truck's position. The player is shifted too,
+// but only while on foot: seated, the player is a child of the truck seat and
+// already moves with the root. GameFlow consumes PendingShift to keep the
 // odometer in the original frame, so distance is never lost across a shift.
+// Anything that caches a world position between frames subscribes to OnShift.
 public class FloatingOrigin : MonoBehaviour
 {
     public Transform root;      // World root: truck, trailer, destination, road
-    public Transform player;    // the driver, which lives outside the root
+    public Transform player;    // the driver; outside the root unless seated
+    public Transform truck;     // set by GameFlow; looked up once if left empty
     public float threshold = 2000f;
     public int ShiftCount { get; private set; }
 
@@ -29,15 +32,16 @@ public class FloatingOrigin : MonoBehaviour
     void Update()
     {
         if (root == null) return;
-        // Use the truck if it is a child of the root, otherwise the root itself.
-        Transform truck = root.Find("Freightliner_Cascadia");
-        CullChunks(truck);
+        if (truck == null) truck = root.Find("Freightliner_Cascadia");
+        CullChunks();
         Vector3 world = truck != null ? truck.position : root.position;
         if (world.sqrMagnitude < threshold * threshold) return;
 
         Vector3 shift = world;
         root.position -= shift;
-        if (player != null) player.position -= shift;
+        if (player != null && !player.IsChildOf(root)) player.position -= shift;
+        // Ground and contact raycasts later this frame must see the moved colliders.
+        Physics.SyncTransforms();
         PendingShift += shift;
         ShiftCount++;
         TotalShifts = ShiftCount;
@@ -46,18 +50,39 @@ public class FloatingOrigin : MonoBehaviour
     }
 
     // Keep physics colliders only near the truck; the route is 50-96 km long.
+    // Every chunk object sits at the route origin and its mesh holds the real
+    // coordinates, so distance is measured to the mesh centre, not the transform.
     public Transform chunkRoot { get; set; }
-    void CullChunks(Transform truck)
+    struct Chunk { public Collider col; public Transform tr; public Vector3 centre; }
+    List<Chunk> chunks;
+    float nextCull;
+    const float CullRadius = 3000f;
+
+    void CullChunks()
     {
         if (chunkRoot == null || truck == null) return;
-        float r2 = 3000f * 3000f;
-        foreach (Transform c in chunkRoot)
+        if (chunks == null)
         {
-            if (!c.name.StartsWith("RouteAsphalt")) continue;
-            var col = c.GetComponent<Collider>();
-            if (col == null) continue;
-            bool near = (c.position - truck.position).sqrMagnitude < r2;
-            if (col.enabled != near) col.enabled = near;
+            chunks = new List<Chunk>();
+            foreach (Transform c in chunkRoot)
+            {
+                if (!c.name.StartsWith("RouteAsphalt")) continue;
+                var col = c.GetComponent<Collider>();
+                var mf = c.GetComponent<MeshFilter>();
+                if (col == null || mf == null || mf.sharedMesh == null) continue;
+                chunks.Add(new Chunk { col = col, tr = c, centre = mf.sharedMesh.bounds.center });
+            }
+        }
+        if (Time.time < nextCull) return;
+        nextCull = Time.time + 0.5f;
+        Vector3 at = truck.position;
+        float r2 = CullRadius * CullRadius;
+        for (int i = 0; i < chunks.Count; i++)
+        {
+            var ch = chunks[i];
+            if (ch.col == null) continue;
+            bool near = (ch.tr.TransformPoint(ch.centre) - at).sqrMagnitude < r2;
+            if (ch.col.enabled != near) ch.col.enabled = near;
         }
     }
 }

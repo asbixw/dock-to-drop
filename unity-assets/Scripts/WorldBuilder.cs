@@ -382,7 +382,7 @@ public static class WorldBuilder
         float endX = xs[n - 1], endY = ys[n - 1];
         for (int i = 0; i < n; i++)
         {
-            float f = i / (n - 1);
+            float f = i / (float)(n - 1);
             xs[i] -= endX * Mathf.SmoothStep(0f, 1f, f);
             ys[i] -= endY * f;
         }

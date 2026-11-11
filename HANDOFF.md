@@ -7,6 +7,45 @@ Backups of the files as they were before coupling (plus the cab-pass HANDOFF/STA
 - Final pass (`dae53d5` + self-checks): low-fps odometer step allowance, 1 km delineator spacing, stale
   "training slice" copy removed, route-length mismatch error, mirror shader/renderer warnings, debrief log.
 
+## 2026-11-11: audit (after stage N)
+
+Fixed (compiled, Play Mode unverified):
+- `FloatingOrigin`: road-chunk cull measured to the chunk transform (always the route origin), so all asphalt
+  colliders went off 3 km out; seated player was shifted twice; no `Physics.SyncTransforms` after a shift;
+  truck looked up by name and chunk names read every frame.
+- `TrailerRig`, `PlayerController`, `DriverBody`, `GameFlow.backingStartPos`: cached world positions now follow
+  `FloatingOrigin.OnShift`.
+- `GameFlow`: shift-end check relative to the yard on x; removed `DeadheadMph`, `EndAfter`; two deprecated
+  `FindObjects*` calls. `PhoneUI`: removed empty `BuildTabsButtons`.
+- `WorldBuilder.BuildRoute`: `i / (n - 1)` was integer division, so only the last sample was pulled to the gate line.
+- README: truck source, project map, git statement. `docs/concept/README.md`: row for image 08.
+
+Left for review (not changed):
+1. `BuildRoute` blend uses `Mathf.SmoothStep(0f, 0.06f, f) * Mathf.SmoothStep(1f, 0.94f, f)`. Unity's SmoothStep
+   interpolates between its first two arguments, so the blend tops out near 0.056 and the road is almost straight
+   and flat. Intended form: `Mathf.SmoothStep(0f, 1f, f / 0.06f) * Mathf.SmoothStep(0f, 1f, (1f - f) / 0.06f)`.
+2. Autoplay/autoshot: `dz` is read once before the drive and the truck steers at `(0, 0, 188 + dz)`.
+3. `RouteSpeedAt` segment boundaries (0.72/0.76) differ from the road kinds in `BuildRoute` (0.70/0.74).
+4. `BuildMac`/`BuildWebGL` call `PrepareScene`, which `prepare_unity.sh` has just run in its own Unity launch.
+5. `prepare_unity.sh` only copies, so a script or asset deleted from `unity-assets/` stays in `unity-project/`.
+   `Assets/Editor/Inspect{Heights,Materials,Models}.cs` exist only in `unity-project/`.
+6. Unused by any script: textures `asphalt_02_*` (3), `concrete_floor_02_Rough`, `concrete_floor_02_nor_gl`,
+   `dawn_sky.hdr` (6.7 MB), `ground_gravel.jpg`; props `Barrel`, `BarrierB`, `StreetLamp`, `StreetLampB` and
+   their `PH_*` maps. Unused public members: `AudioManager.Ignition/PlayVoiceQueue`, `GameFlow.SetGoal/IsEnded/
+   IsPaused/LoadVerified`, `MeshFactory.SetLayer/AddBoxCollider`, `PhoneUI.AddMessage/LastPhoto/PreviewOpen`,
+   `PlayerController.CursorFree/ViewDir`, `TrailerRig.RearCentreWorld`, `TruckController.State/Steer/ToggleDoor/
+   headlightLeft/headlightRight`, `AirLines.Connected`, `InspectionPoint.markerHeight`.
+7. Old generators that overwrite live assets if run: `model_truck.py`, `_v2`, `_v2_backup`, `_v3`, `_v4`
+   (all write `Freightliner_Cascadia.fbx`), `model_container.py`, `preview_*.py`; `voice/generate_mac.py` (marked
+   LEGACY). `Previews/` shows the old procedural truck, and the README hero image is one of them.
+8. README design sections still describe the Dallas-era slice: "No floating waypoints", a white truck, the
+   magenta cab test in "The next pass" and "Brief for the next agent". `ASSET_DOWNLOADS.md` is a finished to-do.
+9. Browser prototype (`index.html`, `src/`, `public/`, `tests/`, `android/`, `ios/`, `package*.json`,
+   `vite.config.js`, `capacitor.config.json`): README calls it the older prototype. Not audited in depth.
+10. Local, git-ignored: `tools/unity-expanded` (9.9 GB), `tools/parts` (2.2 GB), `tools/UnitySetup-WebGL.pkg`,
+    `tools/piper.tar.gz`, 13 `unity-project/mono_crash.*.blob` (124 MB), `logs/` (221 MB), `screenshots/` (298 MB),
+    `backups/` (50 MB, superseded by git), `.piper-venv` (177 MB).
+
 ## 2026-11-11: MAC PLAYTEST #2 fixes
 
 - **#1 Mirror shader**: `MirrorView.Start` tries `Unlit/Texture`, falls back to `Standard`, and skips material creation if both are missing. `Unlit/Texture` (fileID 10752) added to `m_AlwaysIncludedShaders` in `GraphicsSettings.asset`.

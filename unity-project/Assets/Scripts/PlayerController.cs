@@ -71,6 +71,17 @@ public class PlayerController : MonoBehaviour
         yaw = transform.eulerAngles.y;
     }
 
+    // Smoothed camera points are world positions; keep them in the shifted frame
+    // so the chase and third-person cameras do not fly in from the old origin.
+    void OnEnable() { FloatingOrigin.OnShift += OnOriginShift; }
+    void OnDisable() { FloatingOrigin.OnShift -= OnOriginShift; }
+    void OnOriginShift(Vector3 shift)
+    {
+        chasePos -= shift;
+        tpPivot -= shift;
+        aimPoint -= shift;
+    }
+
     void Start()
     {
         yaw = transform.eulerAngles.y;

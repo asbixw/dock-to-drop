@@ -339,8 +339,6 @@ public class PhoneUI : MonoBehaviour
         callView.SetActive(false);
     }
 
-    void BuildTabsButtons() { }
-
     void AddChat(string text, bool me)
     {
         var bubble = UIFactory.Panel(chatContent, "Bubble", new Vector2(700, 120), Vector2.zero, me ? new Color(0.30f, 0.18f, 0.09f) : new Color(0.09f, 0.14f, 0.19f), true, 18);

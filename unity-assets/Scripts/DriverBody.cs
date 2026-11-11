@@ -151,6 +151,10 @@ public class DriverBody : MonoBehaviour
         interactUntil = Time.time + Mathf.Max(0.4f, anim[interact].length * 0.92f);
     }
 
+    void OnEnable() { FloatingOrigin.OnShift += OnOriginShift; }
+    void OnDisable() { FloatingOrigin.OnShift -= OnOriginShift; }
+    void OnOriginShift(Vector3 shift) { lastPos -= shift; }
+
     void LateUpdate()
     {
         if (anim == null) return;

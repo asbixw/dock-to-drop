@@ -56,6 +56,16 @@ public class TrailerRig : MonoBehaviour
     public string CrankSideName => crankSide < 0f ? "right" : "left";
     public Vector3 GladHandWorld(int i) => transform.TransformPoint(new Vector3(-0.62f + i * 0.20f, kingpinLocal.y + 0.42f, noseLocalZ - 0.05f));
 
+    // A floating-origin shift moves the trailer with the world root; move the
+    // cached world positions with it, or the next Follow sweeps from 2 km away.
+    void OnEnable() { FloatingOrigin.OnShift += OnOriginShift; }
+    void OnDisable() { FloatingOrigin.OnShift -= OnOriginShift; }
+    void OnOriginShift(Vector3 shift)
+    {
+        lastAxle -= shift;
+        ParkedWorldPosition -= shift;
+    }
+
     public void Init(GameFlow f)
     {
         flow = f;

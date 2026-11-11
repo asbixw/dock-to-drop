@@ -13,3 +13,4 @@ composition, palette and lighting direction only.
 | `05_facility_gate.jpg` | Gate kiosk approach: plain tilt-up building, red/white boom, stop bar, speed limit, chain link. |
 | `06_yard_docks.jpg` | Yard and docks: numbered doors, white 53' vans, painted stalls, hi-vis worker. |
 | `07_driver_sheet.jpg` | Driver look: late 30s, grey henley, hi-vis vest, jeans, brown boots, dark cap. |
+| `08_guard_dispatcher.jpg` | Gate guard and dispatcher look: guard in navy coveralls and hi-vis vest with a tablet at the kiosk window; dispatcher at a desk with a headset. |

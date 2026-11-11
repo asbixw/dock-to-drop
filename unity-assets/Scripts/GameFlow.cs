@@ -86,7 +86,6 @@ public class GameFlow : MonoBehaviour
     // the truck's actual path along it; there is no multiplier or compressed
     // mileage. The destination yard and gate sit at the far end of the road.
     public int DeadheadAssignedMiles { get; private set; } = 32;
-    const float DeadheadMph = 55f;
     const float MetresPerMile = 1609.344f;
     float deadheadRouteLength = 180f;
     float deadheadWorld;
@@ -189,6 +188,7 @@ public class GameFlow : MonoBehaviour
         origin.root = World.root;
         origin.player = Player.transform;
         origin.chunkRoot = World.root.Find("Route");
+        origin.truck = World.truck.transform;
         Truck = World.truck;
         Truck.player = Player;
         Truck.audio = Audio;
@@ -236,7 +236,7 @@ public class GameFlow : MonoBehaviour
         Player.LookAt(new Vector3(0f, 1.5f, 8f));
         yield return new WaitForSeconds(3f);
         var trees = new List<GameObject>();
-        foreach (var g in FindObjectsByType<LODGroup>(FindObjectsSortMode.None)) trees.Add(g.gameObject);
+        foreach (var g in FindObjectsByType<LODGroup>()) trees.Add(g.gameObject);
         var truckVis = GameObject.Find("TruckVisual");
         var driver = Player.GetComponentsInChildren<SkinnedMeshRenderer>(true);
         string[] steps = { "base", "noshadow", "notrees", "notruck", "nomsaa", "nodriver", "onelight", "base2" };
@@ -628,9 +628,11 @@ public class GameFlow : MonoBehaviour
         // the shift ends when the rig rolls up to the gate with everything done
         if (!ended && rig.coupled && rig.airSupplied && Player.IsSeated)
         {
+            // Relative to the yard on both axes: after an origin shift the yard
+            // is no longer on the world's x = 0 line.
             Vector3 p = Truck.transform.position;
-            float destZ = World.destination != null ? World.destination.position.z : 0f;
-            if (p.z < destZ + 216f && p.z > destZ + 150f && Mathf.Abs(p.x) < 14f)
+            if (World.destination != null) p -= World.destination.position;
+            if (p.z < 216f && p.z > 150f && Mathf.Abs(p.x) < 14f)
             {
                 if (InspectionDone) { Debug.Log("D2D FLOW departed"); EndShift(); }
                 else if (!departureWarned) { departureWarned = true; ShowWarning("Not yet: the inspection and the seal photo come first.", 3f, 1); }
@@ -818,12 +820,6 @@ public class GameFlow : MonoBehaviour
         if (Rig != null && !Rig.coupled)
             ShowSubtitle("INSPECTION COMPLETE\nNow hook it: line up in front of A-14's nose and back under it slowly.", 5f);
         RefreshObjective();
-    }
-
-    IEnumerator EndAfter(float t)
-    {
-        yield return new WaitForSeconds(t);
-        EndShift();
     }
 
     void EndShift()
@@ -1086,7 +1082,7 @@ public class GameFlow : MonoBehaviour
 
     public void SetInspectionMarkers(bool visible)
     {
-        foreach (var ip in FindObjectsOfType<InspectionPoint>(true))
+        foreach (var ip in FindObjectsByType<InspectionPoint>(FindObjectsInactive.Include))
         {
             if (ip.markerRoot != null) ip.markerRoot.gameObject.SetActive(visible && !ip.inspected);
         }
@@ -1276,7 +1272,9 @@ public class GameFlow : MonoBehaviour
     void UpdateDeadhead()
     {
         if (Truck == null) return;
-        deadheadShift += FloatingOrigin.ConsumeShift();
+        Vector3 originShift = FloatingOrigin.ConsumeShift();
+        deadheadShift += originShift;
+        backingStartPos -= originShift;
         Vector3 p = Truck.transform.position + deadheadShift;
         if (!started || ended || gatePassed || deadheadArrived)
         {
