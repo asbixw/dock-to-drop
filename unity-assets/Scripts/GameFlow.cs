@@ -1239,7 +1239,36 @@ public class GameFlow : MonoBehaviour
     float RouteRemainingMiles => Mathf.Max(0f, DeadheadRouteMiles - deadheadMiles);
     int ShiftClockMinutes => 5 * 60 + 40 + Mathf.FloorToInt(playTime / 60f);
     string ClockNow => ClockString(ShiftClockMinutes);
-    string DeadheadEta => ClockString(ShiftClockMinutes + Mathf.CeilToInt(RouteRemainingMiles * 60f / DeadheadMph));
+
+    // Posted speeds along the route: residential town street, two-lane rural
+    // highway, on-ramp, I-80 style interstate, then the yard exit.
+    float RouteSpeedAt(float milesFromStart)
+    {
+        float f = DeadheadRouteMiles > 0f ? milesFromStart / DeadheadRouteMiles : 0f;
+        if (f < 0.02f) return 25f;
+        if (f < 0.72f) return 60f;
+        if (f < 0.76f) return 45f;
+        if (f < 0.97f) return 75f;
+        return 35f;
+    }
+
+    // Hours to cover `miles` starting `milesFromStart` into the route, using
+    // the posted speed of each segment.
+    float RouteHoursFor(float milesFromStart, float miles)
+    {
+        float t = 0f, left = miles, at = milesFromStart;
+        const int steps = 24;
+        for (int i = 0; i < steps && left > 0.001f; i++)
+        {
+            float d = left / (steps - i);
+            t += d / Mathf.Max(5f, RouteSpeedAt(at));
+            at += d; left -= d;
+        }
+        return t;
+    }
+
+    string DeadheadEta => ClockString(ShiftClockMinutes
+        + Mathf.CeilToInt(RouteHoursFor(DeadheadRouteMiles - RouteRemainingMiles, RouteRemainingMiles) * 60f));
     static string ClockString(int total) => (total / 60 % 24).ToString("00") + ":" + (total % 60).ToString("00");
 
     Vector3 deadheadShift;
@@ -1316,7 +1345,7 @@ public class GameFlow : MonoBehaviour
         deadheadArrived = true;
         deadheadActive = false;
         deadheadArrivalClock = ClockNow;
-        int scheduledEta = deadheadDepartMinutes + Mathf.CeilToInt(DeadheadRouteMiles * 60f / DeadheadMph);
+        int scheduledEta = deadheadDepartMinutes + Mathf.CeilToInt(RouteHoursFor(0f, DeadheadRouteMiles) * 60f);
         // A short or forced deadhead is not "on time": the assigned miles must
         // actually be on the odometer.
         deadheadOnTime = deadheadMiles >= DeadheadAssignedMiles - 0.05f
@@ -1617,7 +1646,7 @@ public class GameFlow : MonoBehaviour
         sealPhotoSent = true;
         gatePassed = true;
         loadVerified = true;
-        int deadheadMinutes = Mathf.CeilToInt(DeadheadRouteMiles * 60f / DeadheadMph);
+        int deadheadMinutes = Mathf.CeilToInt(RouteHoursFor(0f, DeadheadRouteMiles) * 60f);
         deadheadMiles = DeadheadRouteMiles;
         deadheadWorld = deadheadRouteLength;
         deadheadArrived = true;
@@ -1730,7 +1759,7 @@ public class GameFlow : MonoBehaviour
         deadheadMiles = deadheadWorld * MilesPerUnit;
         // Keep the staged clock consistent with the staged odometer so the
         // still reads like a real mid-trip frame.
-        playTime = deadheadMiles * (60f / DeadheadMph) * 60f;
+        playTime = RouteHoursFor(0f, deadheadMiles) * 3600f;
         SetObjective(DeadheadObjective);
         UpdateTripHud();
         yield return new WaitForSeconds(0.35f);
