@@ -180,9 +180,9 @@ public static class WorldBuilder
         Tint(dockConcrete, new Color(1f, 1f, 1f));
         Bump(dockConcrete, 0.20f);
         dirt = MeshFactory.TexMat("Dirt", T("dirt_hq"), null, new Vector2(120f, 120f), 0.04f);
-        Tint(dirt, new Color(1.0f, 0.98f, 0.94f));
+        Tint(dirt, new Color(0.86f, 0.76f, 0.58f));
         grass = MeshFactory.TexMat("Grass", T("grass_hq"), null, new Vector2(3f, 72f), 0.03f);
-        Tint(grass, new Color(0.92f, 0.97f, 0.88f));
+        Tint(grass, new Color(0.72f, 0.68f, 0.45f));
 
         siding = MeshFactory.TexMat("WarehouseSiding", T("warehouse_siding"), T("warehouse_siding_normal"), new Vector2(44f, 12f), 0.30f);
         Tint(siding, new Color(0.60f, 0.62f, 0.64f));
@@ -207,7 +207,7 @@ public static class WorldBuilder
         blue = MeshFactory.Mat("AmazonBlue", new Color(0.020f, 0.075f, 0.155f), 0.3f, 0.40f);
         navy = MeshFactory.Mat("Navy", new Color(0.010f, 0.030f, 0.058f), 0.25f, 0.44f);
         red = MeshFactory.Mat("Red", new Color(0.52f, 0.025f, 0.015f), 0.1f, 0.38f);
-        green = MeshFactory.Mat("Foliage", new Color(0.115f, 0.205f, 0.095f), 0f, 0.16f);
+        green = MeshFactory.Mat("Foliage", new Color(0.30f, 0.34f, 0.22f), 0f, 0.16f);
         skin = MeshFactory.Mat("Skin", new Color(0.52f, 0.34f, 0.24f), 0f, 0.58f);
         fabric = MeshFactory.Mat("Fabric", new Color(0.085f, 0.10f, 0.115f), 0f, 0.74f);
     }
@@ -240,6 +240,13 @@ public static class WorldBuilder
             sky.SetFloat("_Exposure", 1.09f);
             RenderSettings.skybox = sky;
         }
+        // High-desert haze: a warm, dusty horizon that hides the far side of
+        // the map and gives the dawn light something to scatter through.
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.Linear;
+        RenderSettings.fogStartDistance = 250f;
+        RenderSettings.fogEndDistance = 3200f;
+        RenderSettings.fogColor = new Color(0.74f, 0.68f, 0.58f, 1f);
         RenderSettings.ambientMode = AmbientMode.Trilight;
         // Dawn light is soft and very wraparound. Keep the ambient high enough that
         // shade reads as cool blue-grey instead of black, which was flattening the
@@ -553,6 +560,21 @@ public static class WorldBuilder
         var ygo = new GameObject("RouteYellowLines"); ygo.transform.SetParent(g, false);
         ygo.AddComponent<MeshFilter>().sharedMesh = ym;
         ygo.AddComponent<MeshRenderer>().sharedMaterial = yellow;
+
+        // Bare brown-tan ranges on the horizon, close enough to read as hills
+        // and far enough to sit in the haze.
+        var mountain = MeshFactory.Mat("Mountain", new Color(0.42f, 0.36f, 0.30f), 0f, 0.05f);
+        for (int i = 0; i < n; i += 400)
+        {
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float dist = 420f + (i % 3) * 90f;
+                Vector3 basePos = pts[i] + left[i] * (side * dist);
+                float h = 120f + (i % 5) * 28f;
+                var ridge = MeshFactory.Cyl("Mountain", 1f, 1f, basePos + Vector3.up * (h * 0.5f), mountain, g, false, 7);
+                ridge.transform.localScale = new Vector3(320f + (i % 4) * 60f, h, 180f + (i % 3) * 50f);
+            }
+        }
     }
 
     // The shift opens in a small single-story house on the edge of a Nevada

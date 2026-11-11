@@ -151,7 +151,7 @@ public static class PropLibrary
             if (diff != null) m.SetTexture("_MainTex", diff);
             if (nor != null) m.SetTexture("_BumpMap", nor);
             m.SetFloat("_Glossiness", 0.22f);
-            m.SetColor("_Color", new Color(0.92f, 0.95f, 0.88f));
+            m.SetColor("_Color", new Color(0.58f, 0.62f, 0.48f));
             m.SetFloat("_Wind", l.Contains("shrub") ? 0.02f : 0.045f);
         }
         else
