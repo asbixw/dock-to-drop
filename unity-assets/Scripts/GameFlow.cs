@@ -185,6 +185,10 @@ public class GameFlow : MonoBehaviour
         Debug.Log("D2D WORLD built");
         BuildPlayer();
         RefreshSensitivityLabel();
+        var origin = gameObject.AddComponent<FloatingOrigin>();
+        origin.root = World.root;
+        origin.player = Player.transform;
+        origin.chunkRoot = World.root.Find("Route");
         Truck = World.truck;
         Truck.player = Player;
         Truck.audio = Audio;
@@ -1238,10 +1242,13 @@ public class GameFlow : MonoBehaviour
     string DeadheadEta => ClockString(ShiftClockMinutes + Mathf.CeilToInt(RouteRemainingMiles * 60f / DeadheadMph));
     static string ClockString(int total) => (total / 60 % 24).ToString("00") + ":" + (total % 60).ToString("00");
 
+    Vector3 deadheadShift;
+    int lastMileLog = -1;
     void UpdateDeadhead()
     {
         if (Truck == null) return;
-        Vector3 p = Truck.transform.position;
+        deadheadShift += FloatingOrigin.ConsumeShift();
+        Vector3 p = Truck.transform.position + deadheadShift;
         if (!started || ended || gatePassed || deadheadArrived)
         {
             deadheadLastPos = p;
@@ -1267,6 +1274,13 @@ public class GameFlow : MonoBehaviour
         if (step < 0.0005f) return;
         deadheadWorld += step;
         deadheadMiles = deadheadWorld * MilesPerUnit;
+        int mile = Mathf.FloorToInt(deadheadMiles);
+        if (mile > lastMileLog)
+        {
+            lastMileLog = mile;
+            Debug.Log("D2D ODOMETER mile=" + mile + " driven=" + deadheadMiles.ToString("F3")
+                + " originShifts=" + FloatingOrigin.TotalShifts);
+        }
         // No clock compression: playTime already advances in real time, and the
         // odometer now reports the metres the truck actually covered.
     }
