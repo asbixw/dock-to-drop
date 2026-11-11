@@ -10,7 +10,12 @@ public class WorldRefs
     // coordinates and then shifted to the far end of the deadhead highway.
     public Transform destination;
     public float routeLength;
+    // Route centreline and road width per sample, in the world root's local
+    // space (the root moves when the floating origin recentres).
+    public List<Vector3> routePoints;
+    public List<float> routeWidths;
     public Transform playerSpawn;
+    public Transform truckBunk;
     public TruckController truck;
     public Transform truckSeat;
     public Transform truckExit;
@@ -50,7 +55,6 @@ public static class WorldBuilder
         BuildGround(root);
         BuildClouds(root);
         BuildTruckStop(root);
-        BuildHouse(root);
         BuildRoad(root);
         BuildHorizon(root);
         refs.truck = BuildTruck(flow, root, out refs.truckSeat, out refs.truckExit, out refs.driverDoor);
@@ -61,7 +65,7 @@ public static class WorldBuilder
         // the road; nothing scales or compresses it.
         float route = flow.DeadheadAssignedMiles * 1609.344f;
         float routeEndZ;
-        BuildRoute(root, refs.truck.transform.position.z, route, out routeEndZ);
+        BuildRoute(root, refs.truck.transform.position.z, route, out routeEndZ, out refs.routePoints, out refs.routeWidths);
         float contactLocal = GateTriggerZ - GateTriggerHalf;
         float destOffset = routeEndZ - contactLocal;
         refs.routeLength = route;
@@ -76,17 +80,6 @@ public static class WorldBuilder
         BuildYardSurroundings(dest);
         dest.position = new Vector3(0f, 0f, destOffset);
 
-        // The trailer the shift pre-trips and hooks is staged in the house lot,
-        // not at the Amazon yard. The yard is the destination of the deadhead.
-        if (refs.trailerRig != null)
-        {
-            var rig = refs.trailerRig;
-            rig.transform.SetParent(root, true);
-            rig.transform.position = new Vector3(-12f, 0.11f, 30f);
-            rig.transform.rotation = Quaternion.identity;
-            rig.SetParkedPose(rig.transform.position, rig.transform.rotation);
-        }
-
         Debug.Log("D2D ROUTE length=" + route.ToString("F1") + "m (" + flow.DeadheadAssignedMiles
             + " mi) routeEndZ=" + routeEndZ.ToString("F1") + " gateZ=" + (destOffset + 205f).ToString("F1")
             + " destOffset=" + destOffset.ToString("F1"));
@@ -95,9 +88,15 @@ public static class WorldBuilder
         BuildReflectionProbes(root);
         refs.playerSpawn = new GameObject("PlayerSpawn").transform;
         refs.playerSpawn.SetParent(root, false);
-        // Wake up beside the bed in the house; the dispatch call rings in here.
-        refs.playerSpawn.position = new Vector3(-20f, 0.14f, 40f);
-        refs.playerSpawn.rotation = Quaternion.Euler(0f, -56f, 0f);
+        // Fallback only: beside the driver door. The shift itself opens on
+        // the sleeper bunk (truckBunk), and GameFlow puts the driver there.
+        refs.playerSpawn.position = refs.truck.transform.TransformPoint(new Vector3(-2.55f, 0.07f, 1.1f));
+        refs.playerSpawn.rotation = Quaternion.Euler(0f, 90f, 0f);
+        // Head position sitting up on the edge of the bunk, looking forward
+        // between the seats at the windshield.
+        refs.truckBunk = new GameObject("BunkHead").transform;
+        refs.truckBunk.SetParent(refs.truck.transform, false);
+        refs.truckBunk.localPosition = new Vector3(0f, 2.62f, -1.50f);
         return refs;
     }
 
@@ -357,42 +356,36 @@ public static class WorldBuilder
     // curve with grades capped at 6%, built from short ribbon segments.
     // The route ends at the gate trigger face, so the odometer distance from
     // the truck to the gate is exactly the assigned miles.
-    static void BuildRoute(Transform root, float truckZ, float assignedRoute, out float endZ)
+    static void BuildRoute(Transform root, float truckZ, float assignedRoute, out float endZ,
+        out List<Vector3> centre, out List<float> centreWidths)
     {
         const float startZ = 217.5f;
         const float startY = 0.08f;
         float initialLeg = Mathf.Max(0f, startZ - truckZ);
         float L = Mathf.Max(100f, assignedRoute - initialLeg);
-        float Lgeo = L + 40f;             // carry the road a little into the yard
-        int n = Mathf.Max(2, Mathf.CeilToInt(Lgeo / 25f) + 1);
 
-        var xs = new List<float>(n);
-        var ys = new List<float>(n);
-        const float A1 = 60f, lam1 = 9000f, A2 = 24f, lam2 = 3200f, phase = 1.3f;
-        const float Y1 = 45f, lamg = 7000f, phaseG = 0.7f;
-        for (int i = 0; i < n; i++)
+        // A curving, graded road is longer than its north-south extent. Shrink
+        // the extent until the driven length to the gate is the assigned one.
+        float Lz = L;
+        List<Vector3> pts = null;
+        for (int iter = 0; iter < 6; iter++)
         {
-            float s = Lgeo * i / (n - 1);
-            float f = Mathf.Min(1f, s / L);
-            float blend = Mathf.SmoothStep(0f, 0.06f, f) * Mathf.SmoothStep(1f, 0.94f, f);
-            xs.Add((A1 * Mathf.Sin(2f * Mathf.PI * s / lam1) + A2 * Mathf.Sin(2f * Mathf.PI * s / lam2 + phase)) * blend);
-            ys.Add(Y1 * Mathf.Sin(2f * Mathf.PI * s / lamg + phaseG) * blend);
+            pts = RouteCentreline(startZ, startY, Lz);
+            float arc = RouteArcLength(pts, startZ, Lz);
+            if (Mathf.Abs(arc - L) < 0.25f || iter == 5)
+            {
+                Debug.Log("D2D ROUTE centreline arc=" + arc.ToString("F1") + " target=" + L.ToString("F1")
+                    + " extentZ=" + Lz.ToString("F1") + " samples=" + pts.Count);
+                break;
+            }
+            Lz *= L / arc;
         }
-        // Force the route to meet the lot and the gate heading straight north.
-        float endX = xs[n - 1], endY = ys[n - 1];
-        for (int i = 0; i < n; i++)
-        {
-            float f = i / (float)(n - 1);
-            xs[i] -= endX * Mathf.SmoothStep(0f, 1f, f);
-            ys[i] -= endY * f;
-        }
+        int n = pts.Count;
+        float Lgeo = pts[n - 1].z - startZ;
 
-        var pts = new List<Vector3>(n);
         var tans = new List<Vector3>(n);
         var widths = new List<float>(n);
         var kinds = new List<int>(n);
-        for (int i = 0; i < n; i++)
-            pts.Add(new Vector3(xs[i], startY + ys[i], startZ + Lgeo * i / (n - 1)));
         for (int i = 0; i < n; i++)
         {
             int i0 = Mathf.Max(0, i - 1), i1 = Mathf.Min(n - 1, i + 1);
@@ -402,7 +395,7 @@ public static class WorldBuilder
         for (int i = 0; i < n; i++)
         {
             float s = Lgeo * i / (n - 1);
-            float f = Mathf.Min(1f, s / L);
+            float f = Mathf.Min(1f, s / Lz);
             int kind; float w;
             if (f < 0.70f) { kind = 0; w = 9f; }                                  // rural two-lane
             else if (f < 0.74f) { kind = 1; w = Mathf.Lerp(9f, 22f, (f - 0.70f) / 0.04f); }  // on-ramp
@@ -412,7 +405,52 @@ public static class WorldBuilder
         }
 
         BuildRouteMeshes(root, pts, tans, widths, kinds, L);
-        endZ = startZ + L;
+        endZ = startZ + Lz;
+        centre = pts;
+        centreWidths = widths;
+    }
+
+    // Centreline samples every 25 m or less for a route whose gate lies Lz
+    // metres north of the start. Curves fade in and out over the first and
+    // last 6% so the road meets the lot and the gate heading straight north.
+    // Grades stay flat for RouteFlatEnds at each end, where the lot and the
+    // yard have level ground under the road, then fade in over RouteGradeFade.
+    const float RouteFlatEnds = 800f, RouteGradeFade = 3000f;
+    static List<Vector3> RouteCentreline(float startZ, float startY, float Lz)
+    {
+        float Lgeo = Lz + 40f;             // carry the road a little into the yard
+        int n = Mathf.Max(2, Mathf.CeilToInt(Lgeo / 25f) + 1);
+        const float A1 = 60f, lam1 = 9000f, A2 = 24f, lam2 = 3200f, phase = 1.3f;
+        const float Y1 = 45f, lamg = 7000f, phaseG = 0.7f;
+        var pts = new List<Vector3>(n);
+        for (int i = 0; i < n; i++)
+        {
+            float s = Lgeo * i / (n - 1);
+            float f = Mathf.Min(1f, s / Lz);
+            // Mathf.SmoothStep(from, to, t) eases between from and to and clamps t.
+            float curve = Mathf.SmoothStep(0f, 1f, f / 0.06f) * Mathf.SmoothStep(0f, 1f, (1f - f) / 0.06f);
+            float grade = Mathf.SmoothStep(0f, 1f, (s - RouteFlatEnds) / RouteGradeFade)
+                * Mathf.SmoothStep(0f, 1f, (Lz - s - RouteFlatEnds) / RouteGradeFade);
+            float x = (A1 * Mathf.Sin(2f * Mathf.PI * s / lam1) + A2 * Mathf.Sin(2f * Mathf.PI * s / lam2 + phase)) * curve;
+            float y = Y1 * Mathf.Sin(2f * Mathf.PI * s / lamg + phaseG) * grade;
+            pts.Add(new Vector3(x, startY + y, startZ + s));
+        }
+        return pts;
+    }
+
+    // Length along the centreline from its first sample to the gate at z = startZ + Lz.
+    static float RouteArcLength(List<Vector3> pts, float startZ, float Lz)
+    {
+        float arc = 0f, gateZ = startZ + Lz;
+        for (int i = 0; i < pts.Count - 1; i++)
+        {
+            if (pts[i].z >= gateZ) break;
+            float seg = (pts[i + 1] - pts[i]).magnitude;
+            float dz = pts[i + 1].z - pts[i].z;
+            if (pts[i + 1].z > gateZ && dz > 1e-4f) seg *= (gateZ - pts[i].z) / dz;
+            arc += seg;
+        }
+        return arc;
     }
 
     // One quad between two samples for a ribbon centred on offset off.
@@ -575,60 +613,6 @@ public static class WorldBuilder
                 ridge.transform.localScale = new Vector3(320f + (i % 4) * 60f, h, 180f + (i % 3) * 50f);
             }
         }
-    }
-
-    // The shift opens in a small single-story house on the edge of a Nevada
-    // town: one lamp-lit bedroom, the phone on the nightstand. The player wakes
-    // here, answers dispatch, then walks out to the truck in the driveway.
-    static void BuildHouse(Transform root)
-    {
-        var g = new GameObject("House").transform; g.SetParent(root, false);
-        g.position = new Vector3(-20f, 0f, 40f);
-
-        // floor slab and flat roof
-        MeshFactory.Box("HouseFloor", new Vector3(7f, 0.12f, 6f), new Vector3(0, 0.06f, 0), wood, g, true);
-        MeshFactory.Box("HouseRoof", new Vector3(7.6f, 0.18f, 6.6f), new Vector3(0, 2.81f, 0), dark, g, false);
-
-        // walls: the east wall has a door opening (1.6 m) in the middle
-        MeshFactory.Box("WallNorth", new Vector3(7f, 2.6f, 0.2f), new Vector3(0, 1.42f, 3f), offWhite, g, true);
-        MeshFactory.Box("WallSouth", new Vector3(7f, 2.6f, 0.2f), new Vector3(0, 1.42f, -3f), offWhite, g, true);
-        MeshFactory.Box("WallWest", new Vector3(0.2f, 2.6f, 6f), new Vector3(-3.5f, 1.42f, 0), offWhite, g, true);
-        MeshFactory.Box("WallEastA", new Vector3(0.2f, 2.6f, 2.2f), new Vector3(3.5f, 1.42f, -1.9f), offWhite, g, true);
-        MeshFactory.Box("WallEastB", new Vector3(0.2f, 2.6f, 2.2f), new Vector3(3.5f, 1.42f, 1.9f), offWhite, g, true);
-        MeshFactory.Box("WallEastTop", new Vector3(0.2f, 0.5f, 1.6f), new Vector3(3.5f, 2.37f, 0), offWhite, g, false);
-        // door frame
-        MeshFactory.Box("DoorFrameL", new Vector3(0.12f, 2.1f, 0.12f), new Vector3(3.5f, 1.17f, -0.85f), wood, g, false);
-        MeshFactory.Box("DoorFrameR", new Vector3(0.12f, 2.1f, 0.12f), new Vector3(3.5f, 1.17f, 0.85f), wood, g, false);
-        MeshFactory.Box("DoorFrameTop", new Vector3(0.12f, 0.12f, 1.8f), new Vector3(3.5f, 2.22f, 0), wood, g, false);
-
-        // bed against the north-west corner
-        MeshFactory.Box("BedFrame", new Vector3(1.6f, 0.32f, 2.1f), new Vector3(-2.4f, 0.30f, 1.7f), wood, g, true);
-        MeshFactory.Box("Mattress", new Vector3(1.5f, 0.22f, 2.0f), new Vector3(-2.4f, 0.57f, 1.7f), whitePaint, g, false);
-        MeshFactory.Box("Blanket", new Vector3(1.55f, 0.10f, 1.2f), new Vector3(-2.4f, 0.72f, 1.4f), fabric, g, false);
-        MeshFactory.Box("Pillow", new Vector3(0.7f, 0.14f, 0.45f), new Vector3(-2.4f, 0.76f, 2.5f), whitePaint, g, false);
-        MeshFactory.Box("Headboard", new Vector3(1.6f, 0.8f, 0.1f), new Vector3(-2.4f, 0.72f, 2.78f), wood, g, false);
-
-        // nightstand, lamp and the phone
-        MeshFactory.Box("Nightstand", new Vector3(0.55f, 0.6f, 0.45f), new Vector3(-1.45f, 0.42f, 2.6f), wood, g, true);
-        MeshFactory.Cyl("LampBase", 0.09f, 0.34f, new Vector3(-1.55f, 0.93f, 2.6f), dark, g, false);
-        MeshFactory.Cyl("LampShade", 0.16f, 0.22f, new Vector3(-1.55f, 1.18f, 2.6f), orangeGlow, g, false);
-        var lampGo = new GameObject("LampLight"); lampGo.transform.SetParent(g, false);
-        lampGo.transform.position = new Vector3(-1.55f, 1.32f, 2.6f);
-        var lamp = lampGo.AddComponent<Light>();
-        lamp.type = LightType.Point; lamp.range = 7f; lamp.intensity = 1.15f;
-        lamp.color = new Color(1f, 0.72f, 0.42f); lamp.shadows = LightShadows.None;
-
-        // the phone on the nightstand: dark body, lit screen
-        MeshFactory.Box("PhoneProp", new Vector3(0.17f, 0.03f, 0.10f), new Vector3(-1.32f, 0.74f, 2.42f), dark, g, false);
-        MeshFactory.Box("PhoneScreen", new Vector3(0.15f, 0.012f, 0.085f), new Vector3(-1.32f, 0.762f, 2.42f), orangeGlow, g, false);
-
-        // a window on the south wall with the pre-dawn sky in it
-        MeshFactory.Box("Window", new Vector3(1.5f, 1.0f, 0.08f), new Vector3(0.6f, 1.65f, -3.02f), glass, g, false);
-        MeshFactory.Box("WindowSill", new Vector3(1.7f, 0.08f, 0.16f), new Vector3(0.6f, 1.12f, -3.0f), wood, g, false);
-
-        // a small rug and a dresser so the room reads as lived-in
-        MeshFactory.Box("Rug", new Vector3(2.2f, 0.02f, 1.6f), new Vector3(-0.6f, 0.135f, 0.4f), fabric, g, false);
-        MeshFactory.Box("Dresser", new Vector3(1.4f, 1.0f, 0.5f), new Vector3(1.6f, 0.62f, 2.6f), wood, g, true);
     }
 
     static void BuildTravelCenterGround(Transform root)
@@ -1069,8 +1053,9 @@ public static class WorldBuilder
         var truckRoot = new GameObject("Freightliner_Cascadia").transform;
         truckRoot.SetParent(root, false);
         // 0.085 lot surface minus the 0.011 tyre-bottom offset measured from the FBX.
-        // Parked in the driveway of the house where the shift starts.
-        truckRoot.position = new Vector3(-12f,  0.074f, 16f);
+        // Parked overnight at the truck stop, west of the fuel canopy, nose
+        // north in the lot lane (x = 0) that runs straight out to the road.
+        truckRoot.position = new Vector3(0f, 0.074f, 8f);
         truckRoot.rotation = Quaternion.identity;
         var model = Object.Instantiate(prefab, truckRoot);
         model.name = "TruckVisual";

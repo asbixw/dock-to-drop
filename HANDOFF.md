@@ -7,6 +7,19 @@ Backups of the files as they were before coupling (plus the cab-pass HANDOFF/STA
 - Final pass (`dae53d5` + self-checks): low-fps odometer step allowance, 1 km delineator spacing, stale
   "training slice" copy removed, route-length mismatch error, mirror shader/renderer warnings, debrief log.
 
+## 2026-11-12: sleeper start and journey skip
+
+- The shift starts on the sleeper bunk at the truck stop (`WorldRefs.truckBunk`, `PlayerController.EnterBunk`).
+  `BuildHouse` is deleted. Truck at (0, 0.074, 8); trailer A-14 stays in the yard at (26, 0.11, 282).
+- The user asked to drop the long drive. `GameFlow.JourneySkip` cuts from point A (route sample 12) to point B
+  (24 samples before the gate) with three road shots and a route strip. `-fulldrive` disables it.
+- Autoplay bug found on the way: closing the phone during the dispatch call lets the call's end reopen it on the
+  road, and an open phone locks the truck. Autoplay now waits for `callRunning` to clear. A player can probably
+  not reach this, but nothing prevents it in code.
+- Vertical origin shifts move the yard off y = 0. Autoplay now uses `Yard().y`; game code was not audited for
+  the same assumption (the skip hides it, because the last shift recentres at yard height).
+- Full-drive run at 20x: two `CONTACT tractor collider=RouteAsphalt` on grades (`logs/sleeper-autoplay-fulldrive.log`).
+
 ## 2026-11-11: audit (after stage N)
 
 Fixed (compiled, Play Mode unverified):
@@ -19,6 +32,13 @@ Fixed (compiled, Play Mode unverified):
   `FindObjects*` calls. `PhoneUI`: removed empty `BuildTabsButtons`.
 - `WorldBuilder.BuildRoute`: `i / (n - 1)` was integer division, so only the last sample was pulled to the gate line.
 - README: truck source, project map, git statement. `docs/concept/README.md`: row for image 08.
+
+Later the same day (uncommitted, built, one autoplay run):
+- Items 1 and 2 below are changed: `BuildRoute` has the correct curve/grade fade with flat 800 m ends and an
+  exact driven length; automation uses `Yard()` and `RouteAimPoint()`.
+- Autoplay still fails, earlier than the steering: its opening cannot find the door or seat since the truck moved
+  to the house lot (`door attempt target=none`), so the truck never rolls. See `STATE.md`.
+- The lot staging puts five cones (`WorldBuilder.cs:1022`) and the trailer nose directly ahead of the truck.
 
 Left for review (not changed):
 1. `BuildRoute` blend uses `Mathf.SmoothStep(0f, 0.06f, f) * Mathf.SmoothStep(1f, 0.94f, f)`. Unity's SmoothStep

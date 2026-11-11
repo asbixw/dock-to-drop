@@ -60,6 +60,9 @@ public class PlayerController : MonoBehaviour
 
     public bool MenuView => menuView;
     public bool IsSeated => seated;
+    /// Sitting up on the sleeper bunk: seated in the cab, but not at the wheel.
+    public bool InBunk => seated && inBunk;
+    bool inBunk;
     bool thirdPersonBeforeSeat;
     TruckController seatTruck;
     public bool ControlEnabled { get; set; } = true;
@@ -94,7 +97,7 @@ public class PlayerController : MonoBehaviour
     }
 
     bool UseThirdPerson => thirdPerson && !forceFirstPerson;
-    public bool ChaseCam => seated && chaseCam && !forceFirstPerson;
+    public bool ChaseCam => seated && chaseCam && !forceFirstPerson && !inBunk;
 
     /// <summary>
     /// Compose the title screen from a fixed yard camera. The player's body is
@@ -614,13 +617,27 @@ public class PlayerController : MonoBehaviour
         cam.transform.localRotation = Quaternion.Euler(pitch, yaw, 0f);
     }
 
+    /// The shift starts here: the same seated head rig as the driver's seat,
+    /// parented to the bunk. TruckController.Enter moves on to the wheel.
+    /// After a scripted cut moves the truck: the chase and third-person
+    /// cameras start again from the new place.
+    public void ResetCameraSmoothing() { chaseInit = false; tpInit = false; }
+
+    public void EnterBunk(Transform bunk)
+    {
+        EnterTruck(bunk);
+        inBunk = true;
+    }
+
     public void EnterTruck(Transform seat)
     {
+        // Climbing from the bunk to the seat must not forget the walking view.
+        if (!seated) thirdPersonBeforeSeat = thirdPerson;
+        inBunk = false;
         seated = true;
         seatParent = seat;
         cc.enabled = false;
         ControlEnabled = false;
-        thirdPersonBeforeSeat = thirdPerson;
         if (thirdPerson) SetThirdPerson(false);
         transform.SetParent(seat, false);
         transform.localPosition = Vector3.zero;
@@ -646,6 +663,7 @@ public class PlayerController : MonoBehaviour
         planarVel = Vector3.zero;
         tpInit = false;
         seated = false;
+        inBunk = false;
         seatParent = null;
         chaseInit = false;
         cc.enabled = true;

@@ -1,17 +1,21 @@
-# State: 2026-11-11, project audit after stage N (compiled, Play Mode unverified)
+# State: 2026-11-12, sleeper start and journey skip work; full autoplay shift passes
 
-**Where the code is**
-- Stage N steps 0-6, playtest #3 fixes and the gate kiosk are committed on `animation-env-polish`.
-- Audit pass (this session, uncommitted): fixed three floating-origin bugs that would have broken the drive after 2-3 km.
-  - Road colliders: every chunk transform sits at the route origin, so the cull switched all of them off once the truck was 3 km out. It now measures to each chunk's mesh centre and runs twice a second.
-  - Seated player: a child of the truck seat, so it was shifted twice on every recentre. Only an on-foot player is shifted now.
-  - Cached world positions (`TrailerRig.lastAxle`, parked pose, chase/third-person camera points, `DriverBody.lastPos`, `backingStartPos`) now follow the shift through `FloatingOrigin.OnShift`.
-- Also: the shift-end check is relative to the yard on x as well as z; route end no longer snaps sideways in its last 25 m (integer division); dead code and two deprecated calls removed; README corrected.
-- `COMPILE OK` (`logs/audit-compile.log`), scripts mirrored byte-identical.
+**Committed (`5daf6ca`, pushed)**: floating-origin audit fixes.
 
-**Known risks**
-- `WorldBuilder.BuildRoute` uses `Mathf.SmoothStep` as if it were GLSL `smoothstep`, so the curves and grades are about 5% of the intended size. Not changed: fixing it reshapes the whole drive.
-- Autoplay steers straight at the gate and caches the yard offset before driving, so it cannot follow a curved road or survive an origin shift.
-- Review list from the audit is in `HANDOFF.md` under "2026-11-11: audit".
+**Uncommitted (built, autoplay verified)**
+- Day starts on the sleeper bunk at the truck stop. Truck at (0, 0.074, 8) facing north in the clear lot lane. `PlayerController.EnterBunk` / `InBunk`; X climbs to the driver's seat (`Truck.Enter(false)`). The house is gone; trailer A-14 is back in its yard slot.
+- Journey skip (`GameFlow.JourneySkip`): 300 m up the road (point A) the screen fades, three road shots play with an A-to-B route strip (Enter skips), and control returns 600 m before Gate 1 (point B) at 30 mph. Odometer and shift clock are credited at posted speeds. `-fulldrive` keeps the whole 32-mile drive.
+- Autoplay: bunk → answer call → seat → step out → board by the door ray → drive. Yard heights use `Yard().y`.
+- Earlier: route curves and grades at exact length, `RouteAimPoint`, `Yard()`.
 
-**Exact next step.** `./prepare_unity.sh && ./build_mac.sh`, then drive at least 5 km of the deadhead by hand and check the log for `D2D ORIGIN shift=`: the truck must stay on the road, the driver in the seat, and the trailer (if hooked) behind the tractor.
+**Runs**
+- `logs/skip-autoplay.log`: `seated=True`, journey 05:41 → 06:14, `guardOpen=True`, 5/5 inspections, hook, `ended=True`, 0 contacts, 0 exceptions.
+- `logs/sleeper-autoplay-fulldrive.log` (before the skip): 25 origin shifts, `guardOpen=True`, 31.96 mi, but two `CONTACT tractor collider=RouteAsphalt` on grades at 20x.
+
+**Known issues**
+- Full drive only: the bumper cast hits the road surface on grades.
+- Skip scene: bare terrain, bars pop in, engine sound does not follow the shots.
+- No pre-trip walkaround objective yet; truck HUD shows in the bunk; "Amazon" copy remains.
+- `-autoshot` and `-uishot` not rerun since the start moved.
+
+**Exact next step.** Play the opening by hand once (bunk, call, X, drive to point A, scene, gate). Then add the pre-trip walkaround as real objectives (tires, lights, air lines) between leaving the bunk and starting the engine.

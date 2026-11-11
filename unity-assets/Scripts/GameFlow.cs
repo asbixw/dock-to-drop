@@ -163,6 +163,7 @@ public class GameFlow : MonoBehaviour
         autoShotMode = HasArg("-autoshot");
         menuShotMode = HasArg("-menushot");
         autoPlayMode = HasArg("-autoplay");
+        fullDrive = HasArg("-fulldrive");
         uiShotMode = HasArg("-uishot");
         // Dispatch picks one of two deadheads. Automation stays deterministic;
         // -deadhead60 / -deadhead32 force a value for a test run.
@@ -211,7 +212,7 @@ public class GameFlow : MonoBehaviour
         Debug.Log("D2D PHONE built");
         BuildMobileControls();
         Phone.Close();
-        SetObjective("Walk to the Freightliner. Open the driver door.");
+        SetObjective("Answer the dispatch call.");
         BuildStartScreen();
         // The title card owns a composed yard view. Keeping the camera on the
         // player's eyes while the third-person driver model is visible fills the
@@ -260,8 +261,7 @@ public class GameFlow : MonoBehaviour
     {
         ShowSubtitle("FERNLEY, NEVADA  ·  05:40\nAmazon Relay load  #D2D-0612", 4.5f);
         yield return new WaitForSeconds(2.0f);
-        // The call reaches the driver in the bedroom, not the cab. Answer it
-        // here, on the phone on the nightstand.
+        // The call wakes the driver in the sleeper bunk at the truck stop.
         if (!callStarted)
         {
             callStarted = true;
@@ -369,8 +369,8 @@ public class GameFlow : MonoBehaviour
         Truck.SetDoor(false);
         if (doorCol != null) doorCol.enabled = false;
         if (seatCol != null) seatCol.enabled = false;
-        // The dispatch call belongs to the bedroom. Getting in the cab only
-        // moves the shift on to the engine and the deadhead.
+        // The dispatch call rings in the sleeper at the start of the shift.
+        // Getting in the seat only moves on to the engine and the deadhead.
         callStarted = true;
         if (gatePassed) RefreshObjective();
         else SetObjective(Truck.engineOn ? DeadheadObjective : "Start the engine.  [E]");
@@ -390,11 +390,14 @@ public class GameFlow : MonoBehaviour
         SetObjective("Incoming call from dispatch. Answer it.");
     }
 
+    // True from the answer until dispatch hangs up and the load screen opens.
+    bool callRunning;
     void AnswerCall()
     {
         Audio.StopVoice();
         Phone.BeginCallAnswered();
         Phone.SetCallNext(null);
+        callRunning = true;
         StartCoroutine(CallRoutine());
     }
 
@@ -422,6 +425,7 @@ public class GameFlow : MonoBehaviour
                 yield return null;
             }
         }
+        callRunning = false;
         Phone.EndCall();
         Phone.Open("load");
         SetObjective("Review the load on your phone.  [TAB]");
@@ -441,8 +445,16 @@ public class GameFlow : MonoBehaviour
         if (loadVerified) return;
         loadVerified = true;
         Phone.Close();
-        SetObjective("Start the engine.  [E]");
-        ShowSubtitle("Details verified. Start the engine when you're ready.", 3f);
+        if (Player != null && Player.InBunk)
+        {
+            SetObjective("Climb into the driver's seat.  [X]");
+            ShowSubtitle("Details verified. Press X to climb into the driver's seat.", 4f);
+        }
+        else
+        {
+            SetObjective("Start the engine.  [E]");
+            ShowSubtitle("Details verified. Start the engine when you're ready.", 3f);
+        }
         Audio.PlayVoice("coach_01");
     }
 
@@ -926,9 +938,13 @@ public class GameFlow : MonoBehaviour
         if (Interaction != null) Interaction.TryInteract();
     }
 
+    // X: from the bunk it climbs forward into the driver's seat; from the
+    // seat it opens the door and steps out.
     public void ExitTruck()
     {
-        if (Player != null && Player.IsSeated && Truck.speed < 0.4f) Truck.Exit();
+        if (Player == null || !Player.IsSeated) return;
+        if (Player.InBunk) { Truck.Enter(false); return; }
+        if (Truck.speed < 0.4f) Truck.Exit();
     }
 
     public void SetGoal(string text) { SetObjective(text); }
@@ -1276,7 +1292,7 @@ public class GameFlow : MonoBehaviour
         deadheadShift += originShift;
         backingStartPos -= originShift;
         Vector3 p = Truck.transform.position + deadheadShift;
-        if (!started || ended || gatePassed || deadheadArrived)
+        if (!started || ended || gatePassed || deadheadArrived || journeySkipping)
         {
             deadheadLastPos = p;
             return;
@@ -1429,12 +1445,13 @@ public class GameFlow : MonoBehaviour
         }
         playTime += Time.deltaTime;
         UpdateDeadhead();
+        UpdateJourneySkip();
         UpdateTripHud();
         UpdateCoupling();
         if (clockText != null) clockText.text = ClockNow;
         if (Truck != null)
         {
-            Truck.controlLock = (Phone != null && Phone.IsOpen) || guardOpen || ended;
+            Truck.controlLock = (Phone != null && Phone.IsOpen) || guardOpen || ended || journeyLock;
             // Hard braking is a safety line in the debrief, not per-frame noise.
             if (Player != null && Player.IsSeated && !ended && Mathf.Abs(Truck.speed) > 4.5f
                 && Truck.LongAccel < -4.5f && Time.time - lastHardBrakeAt > 3f)
@@ -1552,6 +1569,8 @@ public class GameFlow : MonoBehaviour
         Player.CaptureCursor();
         Audio.StartMusic();
         Audio.PlaySfx("seat", 0.5f);
+        // The day starts on the sleeper bunk, not on foot.
+        if (World.truckBunk != null) Player.EnterBunk(World.truckBunk);
         StartCoroutine(Intro());
     }
 
@@ -1612,6 +1631,7 @@ public class GameFlow : MonoBehaviour
             Vector3 sealPlate = seal.transform.position + World.container.TransformDirection(new Vector3(0f, -0.05f, -0.26f));
             Vector3 sealStand = sealPlate + World.container.TransformDirection(new Vector3(0f, 0f, 0.8f));
             sealStand.y = 0.2f;
+            if (Player.IsSeated) Player.ExitTruck(sealStand, Quaternion.identity); // leave the bunk
             Player.Teleport(sealStand, 0f);
             yield return new WaitForSeconds(0.25f);
             Player.LookAt(sealPlate);
@@ -1686,7 +1706,6 @@ public class GameFlow : MonoBehaviour
     IEnumerator AutoShotRoutine()
     {
         Debug.Log("D2D AUTOSHOT start");
-        float dz = World.destination != null ? World.destination.position.z : 0f;
         yield return new WaitForSeconds(1.6f);
         yield return StartCoroutine(CineShot("01_start",
             new Vector3(-9.8f, 1.18f, 16.4f), new Vector3(0f, 2.95f, 8.0f), 50f));
@@ -1770,14 +1789,14 @@ public class GameFlow : MonoBehaviour
         // the real enter/exit path separately.
         Truck.speed = 0f;
         Truck.Exit(true);
-        Truck.transform.position = new Vector3(0, 0, 182f + dz);
+        Truck.transform.position = Yard(0, 0, 182f);
         Truck.transform.rotation = Quaternion.identity;
-        Player.Teleport(new Vector3(-5.0f, 0.22f, 173.0f + dz), 0f);
+        Player.Teleport(Yard(-5.0f, 0.22f, 173.0f), 0f);
         yield return new WaitForSeconds(0.5f);
         if (!guardOpen) OnGateApproach(Truck);
         yield return new WaitForSeconds(0.4f);
         yield return StartCoroutine(CineShot("04_gate",
-            new Vector3(7.0f, 1.65f, 176.5f + dz), new Vector3(1.0f, 2.2f, 199.5f + dz), 58f));
+            Yard(7.0f, 1.65f, 176.5f), Yard(1.0f, 2.2f, 199.5f), 58f));
 
         // Clear the guard conversation so the yard shots show the world, not the quiz.
         if (guardOpen)
@@ -1788,15 +1807,15 @@ public class GameFlow : MonoBehaviour
         ClearSubtitle();
         SetObjective("Drive to trailer A-14 in the yard.");
 
-        Truck.transform.position = new Vector3(14, 0, 254f + dz);
+        Truck.transform.position = Yard(14, 0, 254f);
         Truck.transform.rotation = Quaternion.Euler(0f, 10f, 0f);
         Truck.speed = 0f;
         yield return new WaitForSeconds(0.6f);
         yield return StartCoroutine(CineShot("05_yard",
-            new Vector3(5.5f, 1.68f, 244.0f + dz), new Vector3(20.0f, 2.40f, 266.0f + dz), 55f));
+            Yard(5.5f, 1.68f, 244.0f), Yard(20.0f, 2.40f, 266.0f), 55f));
 
         yield return StartCoroutine(CineShot("06_container",
-            new Vector3(13.5f, 1.50f, 265.0f + dz), new Vector3(25.5f, 2.55f, 276.0f + dz), 50f));
+            Yard(13.5f, 1.50f, 265.0f), Yard(25.5f, 2.55f, 276.0f), 50f));
 
         ClearSubtitle();
         SetObjective("Photograph seal 482913 with your phone.  [TAB]");
@@ -1805,7 +1824,7 @@ public class GameFlow : MonoBehaviour
             World.container.TransformPoint(new Vector3(0.28f, 1.76f, 12.10f)), World.container.TransformPoint(new Vector3(-0.22f, 1.34f, 9.28f)), 33f, true));
         // close look at the docks: pallets, signal lights, chocks, puddle
         yield return StartCoroutine(CineShot("08_docks",
-            new Vector3(-40f, 1.7f, 312f + dz), new Vector3(-52f, 1.2f, 327f + dz), 50f, true));
+            Yard(-40f, 1.7f, 312f), Yard(-52f, 1.2f, 327f), 50f, true));
         yield return StartCoroutine(CouplingShots());
         yield return new WaitForSeconds(0.7f);
         Application.Quit();
@@ -1814,43 +1833,48 @@ public class GameFlow : MonoBehaviour
     IEnumerator AutoPlayRoutine()
     {
         Debug.Log("D2D PLAY start");
-        float dz = World.destination != null ? World.destination.position.z : 0f;
         yield return new WaitForSeconds(1.0f);
         BeginShift();
         yield return new WaitForSeconds(0.8f);
 
-        // open the driver door using the real interaction ray
-        for (int attempt = 0; attempt < 3 && !Truck.doorOpen; attempt++)
-        {
-            Player.Teleport(new Vector3(-3.15f, 0.2f, 10.35f), 0f);
-            Player.LookAt(new Vector3(-1.95f, 1.55f, 9.55f));
-            yield return new WaitForSeconds(0.4f);
-            Debug.Log("D2D PLAY door attempt=" + attempt + " target=" + (Interaction.Current != null ? Interaction.Current.id : "none")
-                + " cam=" + Camera.transform.position);
-            if (Interaction.Current != null && Interaction.Current.id == "door") Interaction.TryInteract();
-            yield return new WaitForSeconds(0.7f);
-        }
-        Debug.Log("D2D PLAY doorOpen=" + Truck.doorOpen);
+        // The day starts on the sleeper bunk at the truck stop.
+        Debug.Log("D2D PLAY bunk=" + Player.InBunk + " truck=" + Truck.transform.position.ToString("F1")
+            + " head=" + Player.transform.position.ToString("F1"));
+        yield return StartCoroutine(Shot("sleeper_start"));
 
-        // climb into the cab through the open door
-        for (int attempt = 0; attempt < 3 && !Player.IsSeated; attempt++)
-        {
-            Player.Teleport(new Vector3(-3.25f, 0.2f, 9.65f), 0f);
-            Player.LookAt(new Vector3(-1.72f, 1.5f, 9.55f));
-            yield return new WaitForSeconds(0.4f);
-            Debug.Log("D2D PLAY seat attempt=" + attempt + " target=" + (Interaction.Current != null ? Interaction.Current.id : "none"));
-            if (Interaction.Current != null) Interaction.TryInteract();
-            yield return new WaitForSeconds(0.8f);
-        }
-        Debug.Log("D2D PLAY seated=" + Player.IsSeated);
-
-        // let the dispatch call run at 5x, then verify the load
+        // Dispatch rings two seconds in. Answer, let the call run at 8x, then
+        // verify the load on the phone.
+        float ringT0 = Time.time;
+        while (!callStarted && Time.time - ringT0 < 5f) yield return null;
+        yield return new WaitForSeconds(0.5f);
+        Debug.Log("D2D PLAY call ringing=" + callStarted + " phoneOpen=" + Phone.IsOpen);
+        AnswerCall();
+        // Wait for dispatch to hang up. Closing the phone mid-call lets the
+        // call's end reopen it on the road, which locks the truck's controls.
         Time.timeScale = 8f;
-        yield return new WaitForSeconds(8.5f);
+        float callT0 = Time.time;
+        while (callRunning && Time.time - callT0 < 300f) yield return null;
         Time.timeScale = 1f;
+        yield return new WaitForSeconds(0.3f);
+        Debug.Log("D2D PLAY call seconds=" + (Time.time - callT0).ToString("F0") + " running=" + callRunning);
         Debug.Log("D2D PLAY call open=" + Phone.IsOpen + " verified=" + loadVerified);
         if (!loadVerified) VerifyLoad();
         yield return new WaitForSeconds(0.5f);
+
+        // X: bunk to the driver's seat, with the door still shut.
+        ExitTruck();
+        yield return new WaitForSeconds(0.5f);
+        Debug.Log("D2D PLAY bunk to seat seated=" + Player.IsSeated + " bunk=" + Player.InBunk + " doorOpen=" + Truck.doorOpen);
+
+        // Step out for the walkaround (X opens the door, X again steps out),
+        // then board again through the door with the real interaction ray.
+        ExitTruck();
+        yield return new WaitForSeconds(0.8f);
+        ExitTruck();
+        yield return new WaitForSeconds(0.8f);
+        Debug.Log("D2D PLAY stepped out seated=" + Player.IsSeated + " pos=" + Player.transform.position.ToString("F1"));
+        yield return StartCoroutine(AutoBoard());
+        Debug.Log("D2D PLAY seated=" + Player.IsSeated);
 
         // ignition, looking down at the dash
         if (Player.IsSeated)
@@ -1882,7 +1906,7 @@ public class GameFlow : MonoBehaviour
         while (!guardOpen && !ended && Time.time - gateT0 < routeSeconds + 20f)
         {
             Vector3 p = Truck.transform.position;
-            Vector3 local = Truck.transform.InverseTransformPoint(new Vector3(0f, 0f, 188f + dz));
+            Vector3 local = Truck.transform.InverseTransformPoint(RouteAimPoint(p, 80f));
             float ang = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
             Truck.touchSteer = Mathf.Clamp(ang / 20f, -1f, 1f);
             Truck.touchThrottle = Truck.speed < 24f ? 0.6f : 0f;
@@ -1920,7 +1944,7 @@ public class GameFlow : MonoBehaviour
 
         // park, exit, and verify feet land on the ground
         Truck.speed = 0f;
-        Truck.transform.position = new Vector3(6f, 0f, 256f + dz);
+        Truck.transform.position = Yard(6f, 0f, 256f);
         Truck.transform.rotation = Quaternion.Euler(0f, 20f, 0f);
         yield return new WaitForSeconds(0.4f);
         Truck.Exit();
@@ -1937,7 +1961,7 @@ public class GameFlow : MonoBehaviour
             if (dir.sqrMagnitude < 0.01f) dir = Vector3.back;
             dir.Normalize();
             Vector3 stand = ip.transform.position + dir * 1.95f;
-            stand.y = 0.2f;
+            stand.y = Yard(0f, 0.2f, 0f).y;
             for (int attempt = 0; attempt < 3 && !ip.inspected; attempt++)
             {
                 Player.Teleport(stand, 0f);
@@ -1958,7 +1982,7 @@ public class GameFlow : MonoBehaviour
             // trailer space: the doors face local +z
             Vector3 sealPlate = seal.transform.position + World.container.TransformDirection(new Vector3(0f, -0.05f, -0.26f));
             Vector3 stand = sealPlate + World.container.TransformDirection(new Vector3(0f, 0f, 0.8f));
-            stand.y = 0.2f;
+            stand.y = Yard(0f, 0.2f, 0f).y;
             Player.Teleport(stand, 0f);
             yield return new WaitForSeconds(0.25f);
             Player.LookAt(sealPlate);
@@ -1991,12 +2015,11 @@ public class GameFlow : MonoBehaviour
     {
         var rig = Rig;
         if (rig == null) yield break;
-        float dz = World.destination != null ? World.destination.position.z : 0f;
         Time.timeScale = 1f;
         Vector3 f = rig.Forward;
         Quaternion rot = Quaternion.LookRotation(f);
         Vector3 fw = rig.KingpinWorld + f * 7f + rot * new Vector3(0.12f, 0f, 0f);
-        Vector3 pos = fw - rot * Truck.FifthWheelLocal; pos.y = 0f;
+        Vector3 pos = fw - rot * Truck.FifthWheelLocal; pos.y = Yard(0f, 0f, 0f).y;
         Truck.speed = 0f;
         Truck.transform.SetPositionAndRotation(pos, rot);
         yield return new WaitForSeconds(0.3f);
@@ -2046,14 +2069,19 @@ public class GameFlow : MonoBehaviour
 
         // pull out and swing right toward the gate lane
         Time.timeScale = 2f;
-        Vector3[] path = { new Vector3(24f, 0f, 252f + dz), new Vector3(12f, 0f, 236f + dz), new Vector3(2f, 0f, 218f + dz), new Vector3(0f, 0f, 190f + dz) };
+        Vector3[] path = { Yard(24f, 0f, 252f), Yard(12f, 0f, 236f), Yard(2f, 0f, 218f), Yard(0f, 0f, 190f) };
         int wp = 0;
         float maxArt = 0f;
         t0 = Time.time;
         while (!ended && Time.time - t0 < 90f)
         {
             Vector3 p = Truck.transform.position;
-            if (wp < path.Length - 1 && Vector3.Distance(FlatXZ(p), path[wp]) < 7f) wp++;
+            if (Vector3.Distance(FlatXZ(p), FlatXZ(path[wp])) < 7f)
+            {
+                // Past the last point there is nothing left to aim at.
+                if (wp == path.Length - 1) break;
+                wp++;
+            }
             Vector3 local = Truck.transform.InverseTransformPoint(path[wp]);
             float ang = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
             Truck.touchSteer = Mathf.Clamp(ang / 20f, -1f, 1f);
@@ -2100,7 +2128,7 @@ public class GameFlow : MonoBehaviour
 
     IEnumerator AutoUse(string id, Vector3 stand, Vector3 look, Func<bool> done, Action force)
     {
-        stand.y = 0.2f;
+        stand.y = Yard(0f, 0.2f, 0f).y;
         for (int attempt = 0; attempt < 3 && !done(); attempt++)
         {
             Player.Teleport(stand, 0f);
@@ -2125,14 +2153,14 @@ public class GameFlow : MonoBehaviour
         Vector3 f = rig.Forward;
         Quaternion rot = Quaternion.LookRotation(f);
         Vector3 right = rot * Vector3.right;
-        Vector3 pos = rig.KingpinWorld + f * 2.2f - rot * Truck.FifthWheelLocal; pos.y = 0f;
+        Vector3 pos = rig.KingpinWorld + f * 2.2f - rot * Truck.FifthWheelLocal; pos.y = Yard(0f, 0f, 0f).y;
         Truck.speed = 0f;
         Truck.transform.SetPositionAndRotation(pos, rot);
         yield return new WaitForSeconds(0.3f);
         Vector3 kp = rig.KingpinWorld;
         yield return StartCoroutine(CineShot("09_hook_approach", kp + f * 1.4f - right * 4.2f + Vector3.up * 0.55f, kp + f * 1.0f, 46f, true));
 
-        pos = rig.KingpinWorld - rot * Truck.FifthWheelLocal; pos.y = 0f;
+        pos = rig.KingpinWorld - rot * Truck.FifthWheelLocal; pos.y = Yard(0f, 0f, 0f).y;
         Truck.transform.SetPositionAndRotation(pos, rot);
         Truck.hooked = rig;
         rig.Couple(Truck, 0.4f);
@@ -2160,6 +2188,241 @@ public class GameFlow : MonoBehaviour
         Vector3 mid = (Truck.transform.position + rig.transform.position) * 0.5f;
         Vector3 side = Vector3.Cross(Vector3.up, rig.Forward).normalized;   // the trailer's left
         yield return StartCoroutine(CineShot("11_rig_turn", mid - side * 17f + rig.Forward * 6f + Vector3.up * 7.5f, mid + Vector3.up * 1.2f, 50f, true));
+    }
+
+    // A point given in the yard's authored coordinates, as a world position
+    // right now. The yard moves whenever the floating origin recentres, so
+    // automation must not cache its offset across a drive or a teleport.
+    Vector3 Yard(float x, float y, float z)
+    {
+        Vector3 o = World != null && World.destination != null ? World.destination.position : Vector3.zero;
+        return new Vector3(o.x + x, o.y + y, o.z + z);
+    }
+
+    // ---- Journey skip ---------------------------------------------------
+    // The miles between the truck stop and the warehouse are not driven in
+    // real time. The driver pulls out of the lot and reaches point A on the
+    // road, a short road scene plays, and control comes back at point B on
+    // the approach to Gate 1. The odometer and the shift clock are credited
+    // with the skipped distance at the posted speeds. `-fulldrive` keeps the
+    // whole drive, which is how the road itself gets tested.
+    const int JourneyPointA = 12;   // route samples (25 m each) past the route start
+    const int JourneyPointB = 24;   // route samples before the gate
+    const float JourneyTrack = 1100f;
+    bool journeySkipping, journeyLock, journeyDone, fullDrive;
+    GameObject journeyRoot;
+    Image journeyFade;
+    RectTransform journeyFill, journeyMarker;
+    Text journeyClock, journeyStats;
+
+    void UpdateJourneySkip()
+    {
+        if (journeyDone || journeySkipping || fullDrive || autoShotMode || uiShotMode || menuShotMode) return;
+        if (!started || ended || gatePassed || deadheadArrived || !deadheadActive) return;
+        if (Truck == null || Player == null || !Player.IsSeated || Player.InBunk || !Truck.engineOn) return;
+        if (Rig != null && Rig.coupled) return;
+        if (Phone != null && Phone.IsOpen) return;
+        var pts = World.routePoints;
+        if (pts == null || pts.Count < JourneyPointA + JourneyPointB + 80) return;
+        // Only the stretch just past point A starts the scene; a scripted
+        // jump to the yard does not.
+        float z = World.root.InverseTransformPoint(Truck.transform.position).z;
+        if (z < pts[JourneyPointA].z || z > pts[JourneyPointA + 40].z) return;
+        StartCoroutine(JourneySkip());
+    }
+
+    void BuildJourneyUI()
+    {
+        var canvas = UIFactory.Canvas("Journey", 60, false, true);
+        journeyRoot = canvas.gameObject;
+        journeyFade = UIFactory.Full(canvas.transform, "Fade", Color.black);
+        journeyFade.raycastTarget = false;
+        var top = UIFactory.Full(canvas.transform, "BarTop", Color.black);
+        top.rectTransform.anchorMin = new Vector2(0f, 1f); top.rectTransform.offsetMin = new Vector2(0f, -96f);
+        var bot = UIFactory.Full(canvas.transform, "BarBottom", Color.black);
+        bot.rectTransform.anchorMax = new Vector2(1f, 0f); bot.rectTransform.offsetMax = new Vector2(0f, 190f);
+        top.raycastTarget = false; bot.raycastTarget = false;
+
+        var orange = new Color(1f, 0.52f, 0.12f);
+        var pale = new Color(0.94f, 0.96f, 0.98f);
+        var grey = new Color(0.62f, 0.70f, 0.76f);
+        var kicker = UIFactory.Label(top.transform, "Kicker", "ON THE ROAD", 22, orange, TextAnchor.UpperLeft, FontStyle.Bold);
+        UIFactory.TopLeft(kicker.rectTransform, new Vector2(56, -34), new Vector2(700, 30));
+        var hint = UIFactory.Label(top.transform, "Skip", "ENTER  ·  SKIP", 18, grey, TextAnchor.UpperRight);
+        UIFactory.TopRight(hint.rectTransform, new Vector2(56, -36), new Vector2(400, 28));
+
+        float half = JourneyTrack * 0.5f;
+        UIFactory.Img(bot.transform, "Track", new Vector2(JourneyTrack, 4f), new Vector2(0f, 18f), new Color(1f, 1f, 1f, 0.22f));
+        var fill = UIFactory.Img(bot.transform, "Fill", new Vector2(0f, 4f), new Vector2(-half, 18f), orange);
+        journeyFill = fill.rectTransform; journeyFill.pivot = new Vector2(0f, 0.5f);
+        UIFactory.Img(bot.transform, "EndA", new Vector2(12f, 12f), new Vector2(-half, 18f), pale);
+        UIFactory.Img(bot.transform, "EndB", new Vector2(12f, 12f), new Vector2(half, 18f), pale);
+        var marker = UIFactory.Img(bot.transform, "Marker", new Vector2(16f, 16f), new Vector2(-half, 18f), orange);
+        journeyMarker = marker.rectTransform; journeyMarker.localRotation = Quaternion.Euler(0f, 0f, 45f);
+        journeyClock = UIFactory.Label(bot.transform, "Clock", "05:40", 22, pale, TextAnchor.MiddleCenter, FontStyle.Bold);
+        journeyClock.rectTransform.sizeDelta = new Vector2(160f, 28f);
+        var a = UIFactory.Label(bot.transform, "A", "A   TRUCK STOP · FERNLEY", 20, pale, TextAnchor.UpperLeft, FontStyle.Bold);
+        a.rectTransform.sizeDelta = new Vector2(520f, 28f); a.rectTransform.anchoredPosition = new Vector2(-half + 260f, -18f);
+        var b = UIFactory.Label(bot.transform, "B", "WAREHOUSE · GATE 1   B", 20, pale, TextAnchor.UpperRight, FontStyle.Bold);
+        b.rectTransform.sizeDelta = new Vector2(520f, 28f); b.rectTransform.anchoredPosition = new Vector2(half - 260f, -18f);
+        journeyStats = UIFactory.Label(bot.transform, "Stats", "", 18, grey, TextAnchor.MiddleCenter);
+        journeyStats.rectTransform.sizeDelta = new Vector2(JourneyTrack, 26f);
+        journeyStats.rectTransform.anchoredPosition = new Vector2(0f, -56f);
+    }
+
+    void SetJourneyProgress(float p, int departMin, int arriveMin)
+    {
+        p = Mathf.Clamp01(p);
+        float x = -JourneyTrack * 0.5f + JourneyTrack * p;
+        journeyFill.sizeDelta = new Vector2(JourneyTrack * p, 4f);
+        journeyMarker.anchoredPosition = new Vector2(x, 18f);
+        journeyClock.rectTransform.anchoredPosition = new Vector2(x, 50f);
+        journeyClock.text = ClockString(Mathf.RoundToInt(Mathf.Lerp(departMin, arriveMin, p)));
+    }
+
+    // World pose in the right-hand lane at fractional route sample `fi`.
+    void RoutePose(float fi, out Vector3 pos, out Vector3 fwd, out Vector3 right)
+    {
+        var pts = World.routePoints;
+        fi = Mathf.Clamp(fi, 0f, pts.Count - 1.001f);
+        int i = Mathf.FloorToInt(fi);
+        Vector3 tan = pts[i + 1] - pts[i]; tan.y = 0f; tan.Normalize();
+        Vector3 r = Vector3.Cross(Vector3.up, tan);
+        float w = World.routeWidths != null && i < World.routeWidths.Count ? World.routeWidths[i] : 9f;
+        float lane = Mathf.Lerp(2.25f, 5.91f, Mathf.Clamp01((w - 9f) / 13f));
+        lane *= Mathf.Clamp01(((pts.Count - 1 - fi) * 25f - 60f) / 300f);
+        pos = World.root.TransformPoint(Vector3.Lerp(pts[i], pts[i + 1], fi - i) + r * lane);
+        fwd = World.root.TransformDirection(tan);
+        right = World.root.TransformDirection(r);
+    }
+
+    // Cut the truck to a point on the route and stay black while the floating
+    // origin recentres on it, the road around it switches on and it settles.
+    IEnumerator JourneyPlace(float fi, float speed)
+    {
+        RoutePose(fi, out Vector3 pos, out Vector3 fwd, out Vector3 right);
+        Truck.speed = speed;
+        Truck.transform.SetPositionAndRotation(pos + Vector3.up * 0.1f, Quaternion.LookRotation(fwd, Vector3.up));
+        float t0 = Time.unscaledTime;
+        for (int frames = 0; frames < 4 || Time.unscaledTime - t0 < 0.25f; frames++) yield return null;
+    }
+
+    IEnumerator JourneySkip()
+    {
+        journeySkipping = true;
+        var pts = World.routePoints;
+        int last = pts.Count - 1;
+        int idxB = last - JourneyPointB;
+        float tail = 0f;
+        for (int i = idxB; i < last; i++) tail += Vector3.Distance(pts[i], pts[i + 1]);
+        float worldAtB = Mathf.Max(deadheadWorld, deadheadRouteLength - tail);
+        float skippedMiles = (worldAtB - deadheadWorld) * MilesPerUnit;
+        float skipSeconds = RouteHoursFor(deadheadMiles, skippedMiles) * 3600f;
+        int departMin = ShiftClockMinutes;
+        int arriveMin = departMin + Mathf.RoundToInt(skipSeconds / 60f);
+        Debug.Log("D2D JOURNEY start miles=" + deadheadMiles.ToString("F2") + " skip=" + skippedMiles.ToString("F2")
+            + " depart=" + ClockString(departMin) + " arrive=" + ClockString(arriveMin));
+
+        if (journeyRoot == null) BuildJourneyUI();
+        journeyStats.text = DeadheadAssignedMiles + " MI  ·  DEP " + ClockString(departMin) + "  ·  ARR " + ClockString(arriveMin);
+        SetJourneyProgress(JourneyPointA / (float)last, departMin, arriveMin);
+        journeyFade.color = Color.clear;
+        journeyRoot.SetActive(true);
+
+        // Fade out with the truck still rolling under the driver's hands.
+        for (float t = 0f; t < 0.5f; t += Time.deltaTime) { journeyFade.color = new Color(0f, 0f, 0f, t / 0.5f); yield return null; }
+        journeyFade.color = Color.black;
+        journeyLock = true;
+        Truck.controlLock = true;
+        SetHudVisible(false);
+        ClearSubtitle();
+
+        Transform cam = Camera.transform;
+        Transform camParent = cam.parent;
+        float fov0 = Camera.fieldOfView;
+        cam.SetParent(null, true);
+
+        // Three shots along the route: a roadside pass-by on the two-lane, a
+        // high view from behind, and a low one from ahead on the interstate.
+        const float cruise = 25f, shotLen = 4.2f;
+        float[] at = { 0.14f, 0.48f, 0.86f };
+        float[] fovs = { 42f, 52f, 40f };
+        bool skip = false;
+        for (int shot = 0; shot < at.Length && !skip; shot++)
+        {
+            float fi = at[shot] * last;
+            yield return StartCoroutine(JourneyPlace(fi, cruise));
+            RoutePose(fi + 70f / 25f, out Vector3 ahead, out Vector3 aheadFwd, out Vector3 aheadRight);
+            Vector3 anchorLocal = World.root.InverseTransformPoint(ahead + aheadRight * 6.5f + Vector3.up * 1.7f);
+            Camera.fieldOfView = fovs[shot];
+            bool captured = false;
+            for (float t = 0f; t < shotLen; t += Time.deltaTime)
+            {
+                if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Input.GetKeyDown(KeyCode.Space))
+                { skip = true; break; }
+                fi += cruise * Time.deltaTime / 25f;
+                RoutePose(fi, out Vector3 pos, out Vector3 fwd, out Vector3 right);
+                pos.y = Truck.transform.position.y;   // the ground follower owns the height
+                Truck.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(fwd, Vector3.up));
+                Vector3 eye, look;
+                if (shot == 0) { eye = World.root.TransformPoint(anchorLocal); look = pos + Vector3.up * 2.0f; }
+                else if (shot == 1) { eye = pos - fwd * 17f - right * 5f + Vector3.up * 7.5f; look = pos + fwd * 8f + Vector3.up * 1.5f; }
+                else { eye = pos + fwd * 17f - right * 4.2f + Vector3.up * 1.5f; look = pos + Vector3.up * 2.2f; }
+                cam.SetPositionAndRotation(eye, Quaternion.LookRotation(look - eye, Vector3.up));
+                journeyFade.color = new Color(0f, 0f, 0f, 1f - Mathf.Clamp01(Mathf.Min(t, shotLen - t) / 0.45f));
+                SetJourneyProgress(fi / last, departMin, arriveMin);
+                if (autoPlayMode && !captured && t > shotLen * 0.5f)
+                {
+                    captured = true;
+                    journeyFade.color = Color.clear;
+                    yield return StartCoroutine(Shot("journey_" + shot));
+                }
+                yield return null;
+            }
+            journeyFade.color = Color.black;
+        }
+
+        // Point B: on the approach to the gate, still rolling at 30 mph.
+        yield return StartCoroutine(JourneyPlace(idxB, 13f));
+        cam.SetParent(camParent, false);
+        cam.localPosition = Vector3.zero;
+        cam.localRotation = Quaternion.identity;
+        Camera.fieldOfView = fov0;
+        Player.ResetCameraSmoothing();
+        deadheadWorld = worldAtB;
+        deadheadMiles = deadheadWorld * MilesPerUnit;
+        playTime += skipSeconds;
+        SetJourneyProgress(idxB / (float)last, departMin, arriveMin);
+        journeyLock = false;
+        journeySkipping = false;
+        journeyDone = true;
+        SetHudVisible(true);
+        ShowSubtitle("GATE 1 AHEAD  ·  " + ClockNow + "\nSlow down and check in with the guard.", 5f);
+        Debug.Log("D2D JOURNEY end miles=" + deadheadMiles.ToString("F2") + " clock=" + ClockNow + " skipped=" + skip
+            + " truck=" + Truck.transform.position.ToString("F1"));
+        for (float t = 0f; t < 0.6f; t += Time.deltaTime) { journeyFade.color = new Color(0f, 0f, 0f, 1f - t / 0.6f); yield return null; }
+        journeyRoot.SetActive(false);
+    }
+
+    // Autoplay steering target: a point on the road `lookAhead` metres in
+    // front of the truck, in the right-hand lane (the right carriageway on the
+    // interstate). The lane offset tapers to the centreline at the gate, which
+    // is where the old straight-line target sat.
+    int routeCursor;
+    Vector3 RouteAimPoint(Vector3 truckPos, float lookAhead)
+    {
+        var pts = World.routePoints;
+        if (pts == null || pts.Count < 2) return Yard(0f, 0f, 188f);
+        Vector3 local = World.root.InverseTransformPoint(truckPos);
+        while (routeCursor < pts.Count - 2 && pts[routeCursor + 1].z < local.z) routeCursor++;
+        int ahead = Mathf.Min(pts.Count - 1, routeCursor + Mathf.Max(1, Mathf.CeilToInt(lookAhead / 25f)));
+        Vector3 tan = (pts[ahead] - pts[ahead - 1]).normalized;
+        Vector3 right = Vector3.Cross(Vector3.up, tan).normalized;
+        float w = World.routeWidths != null && ahead < World.routeWidths.Count ? World.routeWidths[ahead] : 9f;
+        float lane = Mathf.Lerp(2.25f, 5.91f, Mathf.Clamp01((w - 9f) / 13f));
+        float toEnd = (pts.Count - 1 - ahead) * 25f;
+        lane *= Mathf.Clamp01((toEnd - 60f) / 300f);
+        return World.root.TransformPoint(pts[ahead] + right * lane);
     }
 
     IEnumerator CineShot(string name, Vector3 pos, Vector3 look, float fov, bool hideMarkers = false)

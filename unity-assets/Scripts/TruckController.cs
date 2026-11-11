@@ -247,12 +247,18 @@ public class TruckController : MonoBehaviour
         driverDoor.localRotation = to;
     }
 
-    public void Enter()
+    // throughDoor is false when the driver climbs forward from the sleeper
+    // bunk: the door stays shut.
+    public void Enter(bool throughDoor = true)
     {
         if (driving) return;
         driving = true;
-        doorOpen = true;
-        if (driverDoor != null) driverDoor.localRotation = doorOpenLocal;
+        if (throughDoor)
+        {
+            InitDoor();
+            doorOpen = true;
+            if (driverDoor != null) driverDoor.localRotation = doorOpenLocal;
+        }
         if (player != null) player.EnterTruck(seat);
         if (flow != null) flow.OnEnteredTruck();
     }
